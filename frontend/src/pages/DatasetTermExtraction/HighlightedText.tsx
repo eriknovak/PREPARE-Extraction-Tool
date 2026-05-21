@@ -74,9 +74,22 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({ text, terms, labels, 
             className={classNames(styles['highlighted-term'], styles[getLabelColorClass(segment.term.label, labels)], {
               [styles['highlighted-term--focused']]: focusedTermId === segment.term.id,
             })}
-            title={`${segment.term.label}: ${segment.term.value}`}
+            title={
+              segment.term.links && segment.term.links.length > 0
+                ? `${segment.term.label}: ${segment.term.value}\nLinked to: ${segment.term.links
+                    .map((l) =>
+                      l.from_term_id === segment.term.id ? l.to_term_value : l.from_term_value
+                    )
+                    .join(", ")}`
+                : `${segment.term.label}: ${segment.term.value}`
+            }
           >
             {segment.content}
+            {segment.term.links && segment.term.links.length > 0 && (
+              <span className={styles['highlighted-term__link-badge']} aria-hidden="true">
+                🔗
+              </span>
+            )}
           </span>
         )
       )}
