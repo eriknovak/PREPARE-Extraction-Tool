@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json as _json
 import math
 import os
 import re
@@ -200,7 +201,6 @@ async def create_dataset(
     suffix = os.path.splitext(file.filename)[1].lower()
     file_path = await save_upload_to_disk(file, suffix)
 
-    import json as _json
     label_list = [label.strip() for label in labels.split(",")]
     parsed_relations: list = []
     if label_relations:
