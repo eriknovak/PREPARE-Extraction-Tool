@@ -3,7 +3,7 @@ import classNames from "classnames";
 
 import { getLabelColorClass } from "@/utils/labelColors";
 
-import type { SourceTerm, SourceTermCreate } from "@/types";
+import type { SourceTerm, SourceTermCreate, SourceTermLink } from "@/types";
 
 import styles from "./styles.module.css";
 
@@ -16,6 +16,12 @@ export interface AnnotatableTextProps {
   onCreateAnnotation: (term: SourceTermCreate) => void;
   onSelectAnnotation: (id: number | null) => void;
   isAnnotating: boolean;
+  // Link mode
+  linkMode?: boolean;
+  linkFromId?: number | null;
+  onSpanLinkClick?: (termId: number) => void;
+  getCompatibleLabels?: (label: string) => string[];
+  isRelationLabel?: (label: string) => boolean;
 }
 
 const AnnotatableText: React.FC<AnnotatableTextProps> = ({
@@ -27,6 +33,11 @@ const AnnotatableText: React.FC<AnnotatableTextProps> = ({
   onCreateAnnotation,
   onSelectAnnotation,
   isAnnotating,
+  linkMode = false,
+  linkFromId = null,
+  onSpanLinkClick,
+  getCompatibleLabels,
+  isRelationLabel,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -95,6 +106,7 @@ const AnnotatableText: React.FC<AnnotatableTextProps> = ({
 
   // Handle text selection
   const handleMouseUp = useCallback(() => {
+    if (linkMode) return;
     if (!isAnnotating || !selectedLabel) return;
 
     const selection = window.getSelection();
@@ -162,7 +174,7 @@ const AnnotatableText: React.FC<AnnotatableTextProps> = ({
 
     // Clear selection
     selection.removeAllRanges();
-  }, [isAnnotating, selectedLabel, text, annotations, onCreateAnnotation]);
+  }, [linkMode, isAnnotating, selectedLabel, text, annotations, onCreateAnnotation]);
 
   // Handle click on annotation
   const handleAnnotationClick = useCallback(
@@ -176,15 +188,24 @@ const AnnotatableText: React.FC<AnnotatableTextProps> = ({
 
   // Handle click on container to deselect
   const handleContainerClick = useCallback(() => {
+    if (linkMode) return;
     if (selectedAnnotation !== null) {
       onSelectAnnotation(null);
     }
-  }, [selectedAnnotation, onSelectAnnotation]);
+  }, [linkMode, selectedAnnotation, onSelectAnnotation]);
+
+  // Pre-compute from-term once per render for link mode
+  const linkFromTerm = linkMode && linkFromId != null
+    ? annotations.find((a) => a.id === linkFromId) ?? null
+    : null;
 
   return (
     <div
       ref={containerRef}
-      className={classNames(styles['annotatable-text'], { [styles['annotatable-text--annotating']]: isAnnotating })}
+      className={classNames(styles['annotatable-text'], {
+        [styles['annotatable-text--annotating']]: isAnnotating && !linkMode,
+        [styles['annotatable-text--link-mode']]: linkMode,
+      })}
       onMouseUp={handleMouseUp}
       onClick={handleContainerClick}
     >
@@ -192,19 +213,60 @@ const AnnotatableText: React.FC<AnnotatableTextProps> = ({
         segment.type === "text" ? (
           <span key={idx}>{segment.content}</span>
         ) : (
-          <span
-            key={idx}
-            className={classNames(styles['highlighted-term'], styles[getLabelColorClass(segment.term.label, labels)], {
-              [styles['highlighted-term--selected-annotation']]: selectedAnnotation === segment.term.id,
-            })}
-            title={`${segment.term.label}: ${segment.term.value}`}
-            onClick={(e) => handleAnnotationClick(segment.term.id, e)}
-          >
-            {segment.content}
-          </span>
+          (() => {
+            const term = segment.term;
+            const isLinkFrom = linkMode && term.id === linkFromId;
+            const compatibleWithFrom = linkFromTerm && getCompatibleLabels
+              ? getCompatibleLabels(linkFromTerm.label).includes(term.label)
+              : false;
+            const termIsRelation = isRelationLabel ? isRelationLabel(term.label) : false;
+            const isLinkable = linkMode && !isLinkFrom && (
+              linkFromId === null ? termIsRelation : compatibleWithFrom
+            );
+            const isNotLinkable = linkMode && !isLinkFrom && (
+              linkFromId === null ? !termIsRelation : !compatibleWithFrom
+            );
+            const alreadyLinked = linkMode && linkFromId !== null && compatibleWithFrom
+              && !!term.links?.find(
+                (l: SourceTermLink) =>
+                  (l.from_term_id === linkFromId && l.to_term_id === term.id) ||
+                  (l.to_term_id === linkFromId && l.from_term_id === term.id)
+              );
+
+            return (
+              <span
+                key={idx}
+                className={classNames(
+                  styles['highlighted-term'],
+                  styles[getLabelColorClass(term.label, labels)],
+                  {
+                    [styles['highlighted-term--selected-annotation']]: !linkMode && selectedAnnotation === term.id,
+                    [styles['highlighted-term--link-from']]: isLinkFrom,
+                    [styles['highlighted-term--linkable']]: isLinkable && !alreadyLinked,
+                    [styles['highlighted-term--already-linked']]: alreadyLinked,
+                    [styles['highlighted-term--not-linkable']]: isNotLinkable,
+                  }
+                )}
+                title={`${term.label}: ${term.value}`}
+                onClick={(e) => {
+                  if (linkMode && onSpanLinkClick && !isNotLinkable) {
+                    e.stopPropagation();
+                    onSpanLinkClick(term.id);
+                  } else {
+                    handleAnnotationClick(term.id, e);
+                  }
+                }}
+              >
+                {segment.content}
+                {term.links && term.links.length > 0 && (
+                  <span className={styles['highlighted-term__link-badge']} aria-hidden="true">🔗</span>
+                )}
+              </span>
+            );
+          })()
         )
       )}
-      {isAnnotating && !selectedLabel && (
+      {!linkMode && isAnnotating && !selectedLabel && (
         <div className={styles['annotatable-text__hint']}>Select a label from the sidebar to start annotating</div>
       )}
     </div>

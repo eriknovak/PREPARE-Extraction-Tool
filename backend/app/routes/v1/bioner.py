@@ -8,7 +8,7 @@ from sqlmodel import Session, select
 from app.core.database import Dataset, User, engine, get_session
 from app.core.settings import settings
 from app.interfaces import Entity, LabelsInput, NERRequest
-from app.library.record_processing import link_dates_for_record
+from app.library.record_processing import auto_link_entities_for_record, link_dates_for_record
 from app.models_db import ExtractionJob, Record, SourceTerm
 from app.routes.v1.auth import get_current_user
 from app.schemas import (
@@ -129,6 +129,7 @@ def extract_entities_from_record(
         db.add_all(new_terms)
         db.flush()
         link_dates_for_record(db, record, dataset)
+        auto_link_entities_for_record(db, record, dataset)
         db.commit()
 
     return MessageOutput(
@@ -395,6 +396,7 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str]):
                 session.add_all(new_terms)
                 session.flush()
                 link_dates_for_record(session, record, dataset)
+                auto_link_entities_for_record(session, record, dataset)
 
             job.completed += 1
             job.updated_at = datetime.now(timezone.utc)
