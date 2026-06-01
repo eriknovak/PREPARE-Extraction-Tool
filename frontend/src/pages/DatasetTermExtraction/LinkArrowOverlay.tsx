@@ -96,21 +96,17 @@ const LinkArrowOverlay: React.FC<LinkArrowOverlayProps> = ({
 
       let d: string;
       if (sameLine) {
-        // Arc above both spans — anchor to first line of each
-        const dx = Math.abs(x2First - x1First);
-        const arcHeight = Math.max(20, Math.min(80, dx * 0.35));
-        const arcTopY = Math.max(8, Math.min(y1Top, y2Top) - arcHeight);
-        d = `M ${x1First},${y1Top} C ${x1First},${arcTopY} ${x2First},${arcTopY} ${x2First},${y2Top}`;
+        // Horizontal sits 4px above the spans — in the inter-line gap above current line
+        const arcTopY = Math.min(y1Top, y2Top) - 4;
+        d = `M ${x1First},${y1Top} L ${x1First},${arcTopY} L ${x2First},${arcTopY} L ${x2First},${y2Top}`;
       } else if (y1Top < y2Top) {
-        // Forward: from-span is above to-span
-        // Start at the last line of from-span, end at the first line of to-span
-        const midY = (y1Bot + y2Top) / 2;
-        d = `M ${x1Last},${y1Bot} C ${x1Last},${midY} ${x2First},${midY} ${x2First},${y2Top}`;
+        // Forward: horizontal sits 4px below from-span — in the inter-line gap
+        const horizY = y1Bot + 4;
+        d = `M ${x1Last},${y1Bot} L ${x1Last},${horizY} L ${x2First},${horizY} L ${x2First},${y2Top}`;
       } else {
-        // Backward: from-span is below to-span
-        // Start at the first line of from-span, end at the last line of to-span
-        const midY = (y1Top + y2Bot) / 2;
-        d = `M ${x1First},${y1Top} C ${x1First},${midY} ${x2Last},${midY} ${x2Last},${y2Bot}`;
+        // Backward: horizontal sits 4px above from-span — in the inter-line gap
+        const horizY = y1Top - 4;
+        d = `M ${x1First},${y1Top} L ${x1First},${horizY} L ${x2Last},${horizY} L ${x2Last},${y2Bot}`;
       }
 
       computed.push({ link, d });
