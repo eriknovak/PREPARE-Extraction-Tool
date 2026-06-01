@@ -200,18 +200,21 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
       // Arrow Left - Previous record
       if (e.key === "ArrowLeft" && onPreviousRecord && hasPreviousRecord) {
         e.preventDefault();
+        exitLinkMode();
         onPreviousRecord();
       }
 
       // Arrow Right - Next record
       if (e.key === "ArrowRight" && onNextRecord && hasNextRecord) {
         e.preventDefault();
+        exitLinkMode();
         onNextRecord();
       }
 
       // Enter - Toggle reviewed status
       if (e.key === "Enter" && onMarkReviewed) {
         e.preventDefault();
+        exitLinkMode();
         onMarkReviewed();
       }
     },
@@ -344,7 +347,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
             <div className={styles["record-navigation__buttons"]}>
               <Button
                 variant="outline"
-                onClick={onPreviousRecord}
+                onClick={() => { exitLinkMode(); onPreviousRecord?.(); }}
                 disabled={!onPreviousRecord || !hasPreviousRecord}
                 title="Previous record"
               >
@@ -353,7 +356,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
               </Button>
               <Button
                 variant="outline"
-                onClick={onNextRecord}
+                onClick={() => { exitLinkMode(); onNextRecord?.(); }}
                 disabled={!onNextRecord || !hasNextRecord}
                 title="Next record"
               >
@@ -363,7 +366,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
             </div>
             <Button
               variant={isReviewed ? "success" : "primary"}
-              onClick={onMarkReviewed}
+              onClick={() => { exitLinkMode(); onMarkReviewed?.(); }}
               disabled={!onMarkReviewed}
               title={isReviewed ? "Marked as reviewed" : "Mark as reviewed"}
             >
