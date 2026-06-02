@@ -572,6 +572,7 @@ def delete_dataset_background(dataset_id: int):
             dataset = db.get(Dataset, dataset_id)
             if dataset is None:
                 print("Cannot find dataset to delete")
+                return
 
             db.delete(dataset)
             db.commit()
