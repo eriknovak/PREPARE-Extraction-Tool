@@ -23,12 +23,12 @@ router = APIRouter(tags=["BioNER"])
 @router.post("/extract", response_model=List[Entity])
 def extract_entities(
     request: NERRequest,
+    current_user: User = Depends(get_current_user),
 ):
     """
     Extract named entities from medical text using the BioNER service.
     """
 
-    # TODO: Must not allow it to be accessible without authentication
     try:
         response = requests.post(
             f"{settings.EXTRACT_HOST}/ner", json=request.dict(), timeout=300
