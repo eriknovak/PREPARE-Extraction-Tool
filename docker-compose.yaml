@@ -75,6 +75,8 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    volumes:
+      - ./backend/model:/root/.cache/huggingface
     environment:
       - EXTRACT_HOST=${EXTRACT_HOST:-http://bioner:${BIONER_PORT:-5600}}
       - ENVIRONMENT=${ENVIRONMENT}
