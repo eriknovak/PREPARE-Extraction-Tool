@@ -20,6 +20,7 @@ interface LinkArrowOverlayProps {
   annotations: SourceTerm[];
   hoveredTermId: number | null;
   onHoverChange: (id: number | null) => void;
+  interactive?: boolean;
 }
 
 function deduplicateLinks(annotations: SourceTerm[]): SourceTermLink[] {
@@ -41,6 +42,7 @@ const LinkArrowOverlay: React.FC<LinkArrowOverlayProps> = ({
   annotations,
   hoveredTermId,
   onHoverChange,
+  interactive = true,
 }) => {
   const [arcs, setArcs] = useState<ArcCoords[]>([]);
   const [tick, setTick] = useState(0);
@@ -145,13 +147,13 @@ const LinkArrowOverlay: React.FC<LinkArrowOverlayProps> = ({
             strokeWidth={1.5}
             markerEnd={`url(#${MARKER_ID})`}
             style={{
-              opacity: isHighlighted ? 0.85 : 0.2,
+              opacity: interactive ? (isHighlighted ? 0.85 : 0.2) : 0.4,
               transition: "opacity 150ms ease",
-              pointerEvents: "stroke",
-              cursor: "default",
+              pointerEvents: interactive ? "stroke" : "none",
+              cursor: interactive ? "default" : "inherit",
             }}
-            onMouseEnter={() => onHoverChange(arc.link.from_term_id)}
-            onMouseLeave={() => onHoverChange(null)}
+            onMouseEnter={interactive ? () => onHoverChange(arc.link.from_term_id) : undefined}
+            onMouseLeave={interactive ? () => onHoverChange(null) : undefined}
           />
         );
       })}

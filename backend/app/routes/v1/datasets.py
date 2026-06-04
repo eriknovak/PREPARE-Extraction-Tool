@@ -572,6 +572,7 @@ def delete_dataset_background(dataset_id: int):
             dataset = db.get(Dataset, dataset_id)
             if dataset is None:
                 print("Cannot find dataset to delete")
+                return
 
             db.delete(dataset)
             db.commit()
@@ -1522,9 +1523,7 @@ def create_clusters_for_dataset(
     ).all()
 
     if not source_terms:
-        raise HTTPException(
-            status_code=400, detail="No source terms for this label in dataset"
-        )
+        return MessageOutput(message="No source terms for this label in dataset")
 
     raw_texts = [st.value for st in source_terms]
     if not raw_texts:
@@ -1602,19 +1601,25 @@ def create_clusters_for_dataset(
             "metric": "euclidean",
             "cluster_selection_method": "eom",
         }
-        clusterer = HDBSCAN(**HDBSCAN_PARAMS)
-        labels_arr = clusterer.fit_predict(embeddings)
 
-        labels_arr = _merge_labels_by_spelling(
-            labels_arr.tolist() if hasattr(labels_arr, "tolist") else labels_arr,
-            texts,
-            max_typos=1,
-        )
+        if len(texts) < HDBSCAN_PARAMS["min_cluster_size"]:
+            # Too few samples for HDBSCAN — treat all as noise so the
+            # noise-grouping block below creates one cluster per term.
+            labels_arr = [-1] * len(texts)
+        else:
+            clusterer = HDBSCAN(**HDBSCAN_PARAMS)
+            labels_arr = clusterer.fit_predict(embeddings)
 
-        labels_arr = _merge_labels_by_centroid_similarity(
-            labels_arr, embeddings, threshold=0.8
-        )
-        labels_arr = [int(x) for x in labels_arr]
+            labels_arr = _merge_labels_by_spelling(
+                labels_arr.tolist() if hasattr(labels_arr, "tolist") else labels_arr,
+                texts,
+                max_typos=1,
+            )
+
+            labels_arr = _merge_labels_by_centroid_similarity(
+                labels_arr, embeddings, threshold=0.8
+            )
+            labels_arr = [int(x) for x in labels_arr]
 
     # Remove existing clusters for this dataset/label
     # TODO: This might be a bit dangerous if the user is not careful
