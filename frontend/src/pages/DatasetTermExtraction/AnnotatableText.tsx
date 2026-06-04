@@ -299,14 +299,13 @@ const AnnotatableText: React.FC<AnnotatableTextProps> = ({
       {!linkMode && isAnnotating && !selectedLabel && (
         <div className={styles['annotatable-text__hint']}>Select a label from the sidebar to start annotating</div>
       )}
-      {!linkMode && (
-        <LinkArrowOverlay
-          containerRef={containerRef}
-          annotations={annotations}
-          hoveredTermId={hoveredTermId}
-          onHoverChange={setHoveredTermId}
-        />
-      )}
+      <LinkArrowOverlay
+        containerRef={containerRef}
+        annotations={annotations}
+        hoveredTermId={hoveredTermId}
+        onHoverChange={setHoveredTermId}
+        interactive={!linkMode}
+      />
     </div>
   );
 };

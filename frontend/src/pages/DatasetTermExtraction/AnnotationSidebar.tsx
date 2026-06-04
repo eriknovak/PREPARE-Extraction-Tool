@@ -173,6 +173,18 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
         return;
       }
 
+      // L toggles link mode (only when linking is available)
+      if ((e.key === "l" || e.key === "L") && !readOnly && labelRelations.length > 0) {
+        e.preventDefault();
+        if (linkMode) {
+          exitLinkMode();
+        } else {
+          setLinkMode(true);
+          onSelectAnnotation(null);
+        }
+        return;
+      }
+
       const key = parseInt(e.key, 10);
       if (!readOnly && !linkMode && key >= 1 && key <= 9 && key <= labels.length) {
         e.preventDefault();
@@ -246,7 +258,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
   }, [isOpen, handleKeyDown]);
 
   return (
-    <Sidebar isOpen={isOpen} onClose={onClose} title="Annotation Panel" width="75vw">
+    <Sidebar isOpen={isOpen} onClose={onClose} title="Annotation Panel" width="75vw" disableEscapeClose={linkMode}>
       <div className={styles["annotation-sidebar"]} onClick={() => onSelectAnnotation(null)}>
         {/* Left side - Text to annotate */}
         <div>
@@ -276,7 +288,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
               <div className={styles["link-mode-banner"]}>
                 {linkFromId === null
                   ? "Click a highlighted term in the text to select it"
-                  : "Click a compatible term in the text to link — or click an orange term to unlink"}
+                  : "Click a compatible term in the text to link — or click a black term to unlink"}
               </div>
             )}
             <div className={styles["label-section__buttons"]}>
@@ -410,8 +422,8 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                 {labelRelations.length > 0 && (
                   <p>
                     <strong>Linking:</strong> Click <em>Link</em> to enter link mode, then click a highlighted term in
-                    the text (green = linkable, orange = already linked). Click a compatible term to link, or click an
-                    orange term to remove that link. With a term selected, press <kbd>Delete</kbd> to remove all its
+                    the text (grey border = linkable, black border = already linked). Click a compatible term to link, or click a
+                    black-bordered term to remove that link. With a term selected, press <kbd>Delete</kbd> to remove all its
                     links at once. Press <kbd>Esc</kbd> to cancel.
                   </p>
                 )}
@@ -424,6 +436,9 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                   </li>
                   <li>
                     <kbd>Delete</kbd> Delete annotation / remove links
+                  </li>
+                  <li>
+                    <kbd>L</kbd> Toggle link mode
                   </li>
                   <li>
                     <kbd>Esc</kbd> Cancel link mode

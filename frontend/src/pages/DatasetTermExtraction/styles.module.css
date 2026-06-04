@@ -526,30 +526,19 @@
 .highlighted-term--link-from {
   outline: 2px solid #f59e0b;
   outline-offset: 1.2px;
-  background-color: rgba(245, 158, 11, 0.15) !important;
   cursor: pointer;
 }
 
 .highlighted-term--linkable {
-  outline: 2px solid #4ade80;
+  outline: 2px solid #94a3b8;
   outline-offset: 1.2px;
-  background-color: rgba(74, 222, 128, 0.15) !important;
   cursor: pointer;
-}
-
-.highlighted-term--linkable:hover {
-  background-color: rgba(74, 222, 128, 0.3) !important;
 }
 
 .highlighted-term--already-linked {
-  outline: 2px solid #fb923c;
+  outline: 2px solid #1e293b;
   outline-offset: 1.2px;
-  background-color: rgba(251, 146, 60, 0.15) !important;
   cursor: pointer;
-}
-
-.highlighted-term--already-linked:hover {
-  background-color: rgba(251, 146, 60, 0.3) !important;
 }
 
 .highlighted-term--not-linkable {
