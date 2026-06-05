@@ -278,9 +278,9 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                       onSelectAnnotation(null);
                     }
                   }}
-                  title={linkMode ? "Cancel linking (Esc)" : "Link two annotations"}
+                  title={linkMode ? "Confirm linking (Esc)" : "Link two annotations"}
                 >
-                  {linkMode ? "Cancel" : "Link"}
+                  {linkMode ? "Confirm" : "Link"}
                 </Button>
               )}
             </div>
@@ -441,7 +441,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                     <kbd>L</kbd> Toggle link mode
                   </li>
                   <li>
-                    <kbd>Esc</kbd> Cancel link mode
+                    <kbd>Esc</kbd> Confirm link mode
                   </li>
                   <li>
                     <kbd>←</kbd> / <kbd>→</kbd> Prev / next record
