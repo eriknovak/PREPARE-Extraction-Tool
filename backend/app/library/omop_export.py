@@ -60,15 +60,17 @@ def _query_export_rows(
 ) -> List[dict]:
     """Fetch all mapped source terms with patient/visit/concept data."""
     LinkedTerm = aliased(SourceTerm)
+    LinkedCluster = aliased(Cluster)
 
     statement = (
-        select(SourceTerm, Record, Concept, SourceToConceptMap, LinkedTerm)
+        select(SourceTerm, Record, Concept, SourceToConceptMap, LinkedTerm, LinkedCluster)
         .join(Record, SourceTerm.record_id == Record.id)
         .join(Cluster, SourceTerm.cluster_id == Cluster.id)
         .join(SourceToConceptMap, SourceToConceptMap.cluster_id == Cluster.id)
         .join(Concept, SourceToConceptMap.concept_id == Concept.id)
         .outerjoin(SourceTermLink, SourceTermLink.from_term_id == SourceTerm.id)
         .outerjoin(LinkedTerm, SourceTermLink.to_term_id == LinkedTerm.id)
+        .outerjoin(LinkedCluster, LinkedTerm.cluster_id == LinkedCluster.id)
         .where(Record.dataset_id == dataset_id)
     )
 
@@ -91,9 +93,9 @@ def _query_export_rows(
             "domain_id": c.domain_id,
             "vocab_term_name": c.vocab_term_name,
             "mapping_status": m.status,
-            "linked_value": lt.value if lt else None,
+            "linked_value": (lc.title if lc else lt.value) if lt else None,
         }
-        for st, r, c, m, lt in results
+        for st, r, c, m, lt, lc in results
     ]
 
 
