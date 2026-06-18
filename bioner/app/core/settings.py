@@ -13,11 +13,12 @@ class Settings(BaseSettings):
     """Bioner service settings.
 
     Attributes:
-        BACKEND_URL (str): Base URL of the backend service used for training
-            event callbacks.
+        BACKEND_HOST (str): Base URL of the backend service used for training
+            event callbacks. Defaults to localhost for local runs; overridden to
+            the compose service name (http://backend:8000) in docker-compose.
     """
 
-    BACKEND_URL: str = "http://prepare-backend:8000"
+    BACKEND_HOST: str = "http://localhost:8000"
 
     # ======================================================
     # Environment setting

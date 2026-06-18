@@ -26,8 +26,8 @@ logger = logging.getLogger(__name__)
 # Backend callback config
 # -----------------------------
 
-BACKEND_URL = settings.BACKEND_URL
-CALLBACK_URL = f"{BACKEND_URL}/api/v1/bioner/internal/training-events"
+BACKEND_HOST = settings.BACKEND_HOST
+CALLBACK_URL = f"{BACKEND_HOST}/api/v1/bioner/internal/training-events"
 
 
 def gliner_to_entities(text: str, preds: list[dict]) -> list[Entity]:

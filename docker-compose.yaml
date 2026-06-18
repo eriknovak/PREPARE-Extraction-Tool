@@ -78,7 +78,8 @@ services:
     env_file:
       - .env
     environment:
-      - EXTRACT_HOST=${EXTRACT_HOST:-http://bioner:${BIONER_PORT:-5600}}
+      # Bioner reachable by compose service name inside the network (overrides .env localhost)
+      - EXTRACT_HOST=http://bioner:${BIONER_PORT:-5600}
       - ENVIRONMENT=${ENVIRONMENT}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
       - SECRET_KEY=${SECRET_KEY?Variable not set}
@@ -157,6 +158,8 @@ services:
       - BIONER_MODELS_DIR=/models
       # Persistent HuggingFace cache location
       - HF_HOME=/.cache
+      # Backend reachable by compose service name inside the network (overrides .env localhost)
+      - BACKEND_HOST=http://backend:8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]
       interval: 15s
