@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # Service settings
     EXTRACT_HOST: str = "http://0.0.0.0:5600"
+    BIONER_URL: str = "http://localhost:5600"
 
     # Model settings
     EMBEDDING_MODEL_SENTENCE: Union[str, None] = None
