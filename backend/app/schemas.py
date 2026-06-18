@@ -1,7 +1,7 @@
 import re
 from math import ceil
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Query
 from pydantic import BaseModel, Field, field_validator
@@ -619,3 +619,37 @@ class DistinctValuesOutput(BaseModel):
     """Response model for distinct filter values (domains, concept classes)."""
 
     values: List[str]
+
+
+# ================================================
+# Training / monitoring schemas
+# ================================================
+
+
+class GLiNERTrainingRequest(BaseModel):
+    """Request body to start a GLiNER training run."""
+
+    dataset_id: Optional[int] = None
+    labels: List[str] = Field(default_factory=list)
+    base_model: str = "urchade/gliner_small-v2.1"
+    val_ratio: float = 0.1
+
+
+class TrainingStartResponse(BaseModel):
+    run_id: int
+
+
+class TrainingRunSummary(BaseModel):
+    run_id: int
+    status: str
+
+
+class RunEvaluationResponse(BaseModel):
+    run_id: int
+    per_label: Dict[str, Dict[str, Any]]
+
+
+class FullStatsResponse(BaseModel):
+    totalRecords: int
+    totalTerms: int
+    labelDistribution: Dict[str, int]
