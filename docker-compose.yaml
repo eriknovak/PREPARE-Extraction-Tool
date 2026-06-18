@@ -73,6 +73,8 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+      bioner:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -155,6 +157,12 @@ services:
       - BIONER_MODELS_DIR=/models
       # Persistent HuggingFace cache location
       - HF_HOME=/.cache
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 600s
     networks:
       - prepare-public
       - default
