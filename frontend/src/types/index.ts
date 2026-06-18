@@ -438,3 +438,47 @@ export interface ConceptSearchParams {
 export interface DistinctValuesOutput {
   values: string[];
 }
+
+// ================================================
+// Monitoring / training types
+// ================================================
+
+/** Minimal dataset shape used by the monitoring dashboard. */
+export interface MonitorDataset {
+  id: number;
+  name: string;
+}
+
+/** A training run identifier (optionally with status). */
+export interface MonitorRun {
+  run_id: number;
+  status?: string;
+}
+
+/** Per-label evaluation metrics returned by the bioner backend. */
+export interface PerLabelMetrics {
+  exact_f1?: number;
+  relaxed_f1?: number;
+  f1?: number;
+  precision: number;
+  recall: number;
+}
+
+/** Evaluation response for a single run. */
+export interface EvaluationResponse {
+  run_id: number;
+  per_label: { [label: string]: PerLabelMetrics };
+}
+
+/** A single training metric point streamed over the websocket. */
+export interface TrainingMetric {
+  epoch: number;
+  loss: number;
+}
+
+/** Dataset statistics used by the monitoring dashboard. */
+export interface MonitorDatasetStats {
+  totalRecords: number;
+  totalTerms: number;
+  labelDistribution: { [label: string]: number };
+}
