@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import classNames from "classnames";
 
 import type { MonitorDatasetStats } from "types";
+
+import styles from "./styles.module.css";
 
 interface Props {
   datasetId: number | null;
@@ -34,29 +37,24 @@ const LabelSelector = ({ datasetStats, onChange }: Props) => {
   if (!datasetStats?.labelDistribution) return null;
 
   return (
-    <div style={{ marginTop: 20 }}>
-      <h2>Select labels for training</h2>
+    <div className={styles["label-selector"]}>
+      <h3 className={styles["label-selector__title"]}>Select labels for training</h3>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+      <div className={styles["label-selector__list"]}>
         {Object.keys(datasetStats.labelDistribution).map((label) => {
           const active = selectedLabels.includes(label);
 
           return (
-            <div
+            <button
               key={label}
+              type="button"
               onClick={() => toggleLabel(label)}
-              style={{
-                padding: "8px 12px",
-                borderRadius: 8,
-                cursor: "pointer",
-                border: "1px solid #ccc",
-                background: active ? "#4caf50" : "#fff",
-                color: active ? "#fff" : "#000",
-                userSelect: "none",
-              }}
+              className={classNames(styles["label-toggle"], {
+                [styles["label-toggle--active"]]: active,
+              })}
             >
               {label} ({datasetStats.labelDistribution[label]})
-            </div>
+            </button>
           );
         })}
       </div>

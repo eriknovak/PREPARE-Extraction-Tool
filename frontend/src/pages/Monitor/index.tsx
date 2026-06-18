@@ -10,11 +10,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import classNames from "classnames";
 
 import Button from "@components/Button";
+import Card from "@components/Card";
 import Layout from "@components/Layout";
+import ProgressBar from "@components/ProgressBar";
+import Select from "@components/Select";
 import StatCard from "@components/StatCard";
+import { ToastContainer } from "@components/Toast/ToastContainer";
 import { usePageTitle } from "@hooks/usePageTitle";
+import { useToast } from "@hooks/useToast";
 import {
   getAllEvaluations,
   getAllRunEvaluations,
@@ -36,28 +42,8 @@ import type {
 } from "types";
 
 import LabelSelector from "./LabelSelector";
-
-// ------------------ UI WRAPPER ------------------
-
-interface SectionCardProps {
-  title: string;
-  children: React.ReactNode;
-}
-
-const SectionCard = ({ title, children }: SectionCardProps) => (
-  <div
-    style={{
-      background: "#fff",
-      padding: 16,
-      borderRadius: 12,
-      boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-      marginBottom: 20,
-    }}
-  >
-    <h2 style={{ marginBottom: 12 }}>{title}</h2>
-    {children}
-  </div>
-);
+import { CHART } from "./chartColors";
+import styles from "./styles.module.css";
 
 const DEFAULT_MODEL = "urchade/gliner_small-v2.1";
 
@@ -69,12 +55,6 @@ const readMetric = (m: PerLabelMetrics, mode: "f1" | "precision" | "recall"): nu
   if (mode === "recall") return m.recall ?? 0;
   return readF1(m);
 };
-
-interface AlertState {
-  type: "error" | "success" | "info";
-  message: string;
-  suggestion?: string;
-}
 
 interface HeatmapRow {
   run: number;
@@ -88,21 +68,17 @@ interface HoveredCell {
 }
 
 const Monitor = () => {
-  usePageTitle("Monitor");
+  usePageTitle("Monitoring");
 
-  const [alert, setAlert] = useState<AlertState | null>(null);
+  const toast = useToast();
 
   const showAlert = (
     payload: { message?: string; detail?: string; suggestion?: string },
     type: "error" | "success" | "info" = "error"
   ) => {
-    setAlert({
-      type,
-      message: payload?.message || payload?.detail || "Unknown error",
-      suggestion: payload?.suggestion,
-    });
-
-    setTimeout(() => setAlert(null), 5000);
+    const base = payload?.message || payload?.detail || "Unknown error";
+    const message = payload?.suggestion ? `${base} — ${payload.suggestion}` : base;
+    toast.showToast(message, type);
   };
 
   const [token] = useState<string | null>(() => localStorage.getItem("access_token"));
@@ -271,15 +247,20 @@ const Monitor = () => {
   }, [safeRuns, metricMode, labelKeys]);
 
   const getColor = (value: number) => {
-    // clamp 0-1
+    // clamp 0-1, interpolate from the "loss" (red) token to the "exactF1" (green) token
     const v = Math.max(0, Math.min(1, value));
 
-    // red -> yellow -> green scale
-    const r = v < 0.5 ? 255 : Math.floor(255 * (1 - v));
-    const g = v < 0.5 ? Math.floor(255 * v * 2) : 255;
-    const b = 120;
+    const lerp = (from: number, to: number) => Math.round(from + (to - from) * v);
+    const hexToRgb = (hex: string): [number, number, number] => [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
 
-    return `rgb(${r},${g},${b})`;
+    const [r0, g0, b0] = hexToRgb(CHART.loss);
+    const [r1, g1, b1] = hexToRgb(CHART.exactF1);
+
+    return `rgb(${lerp(r0, r1)},${lerp(g0, g1)},${lerp(b0, b1)})`;
   };
 
   // ------------------ WEBSOCKET ------------------
@@ -393,10 +374,11 @@ const Monitor = () => {
     ? (Object.entries(evaluation.per_label) as [string, PerLabelMetrics][])
         .filter(([k]) => !["micro avg", "macro avg", "weighted avg"].includes(k))
         .map(([label, m]) => ({
-          labelName: label,
-          precision: m.precision,
-          recall: m.recall,
-          f1: readF1(m),
+          label,
+          exact_f1: m.exact_f1 ?? 0,
+          relaxed_f1: m.relaxed_f1 ?? 0,
+          precision: m.precision ?? 0,
+          recall: m.recall ?? 0,
         }))
     : [];
 
@@ -404,48 +386,27 @@ const Monitor = () => {
 
   return (
     <Layout>
-      <h1 style={{ fontSize: 26, fontWeight: 700 }}>Monitoring Dashboard</h1>
+      <h1 className={styles.monitor__title}>Monitoring Dashboard</h1>
 
       {/* DATASET */}
-      <SectionCard title="Dataset">
-        {datasets.map((d) => (
-          <Button
-            key={d.id}
-            onClick={() => selectDataset(d.id)}
-            variant={selectedDatasetId === d.id ? "primary" : "outline"}
-          >
-            {d.name}
-          </Button>
-        ))}
-      </SectionCard>
-
-      {alert && (
-        <div
-          style={{
-            position: "fixed",
-            top: 20,
-            right: 20,
-            padding: 16,
-            borderRadius: 10,
-            background: alert.type === "error" ? "#ff4d4f" : "#52c41a",
-            color: "white",
-            maxWidth: 320,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-            zIndex: 9999,
-          }}
-        >
-          <div style={{ fontWeight: 700 }}>{alert.message}</div>
-
-          {alert.suggestion && (
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9 }}>💡 {alert.suggestion}</div>
-          )}
+      <Card title="Dataset">
+        <div className={styles["monitor__dataset-list"]}>
+          {datasets.map((d) => (
+            <Button
+              key={d.id}
+              onClick={() => selectDataset(d.id)}
+              variant={selectedDatasetId === d.id ? "primary" : "outline"}
+            >
+              {d.name}
+            </Button>
+          ))}
         </div>
-      )}
+      </Card>
 
       {/* STATS */}
       {datasetStats && (
-        <SectionCard title={`Dataset ${selectedDatasetId}`}>
-          <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
+        <Card title={`Dataset ${selectedDatasetId}`}>
+          <div className={styles.monitor__stats}>
             <StatCard label="Records" value={datasetStats.totalRecords} />
             <StatCard label="Terms" value={datasetStats.totalTerms} />
           </div>
@@ -455,27 +416,24 @@ const Monitor = () => {
             datasetStats={datasetStats}
             onChange={setSelectedLabels}
           />
-        </SectionCard>
+        </Card>
       )}
 
       {/* TRAINING */}
-      <SectionCard title="Training">
+      <Card title="Training">
         {/* Model selector */}
-        <div style={{ marginBottom: 16 }}>
-          <p style={{ marginBottom: 8, fontWeight: 600 }}>Base model</p>
+        <div className={styles.monitor__field}>
+          <p className={styles.monitor__label}>Base model</p>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <div className={styles["monitor__radio-group"]}>
+            <label className={styles.monitor__radio}>
               <input type="radio" checked={!useCustomModel} onChange={() => setUseCustomModel(false)} />
               <span>
-                Default:{" "}
-                <code style={{ background: "#f5f5f5", padding: "2px 6px", borderRadius: 4 }}>
-                  {DEFAULT_MODEL}
-                </code>
+                Default: <code className={styles.monitor__code}>{DEFAULT_MODEL}</code>
               </span>
             </label>
 
-            <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <label className={styles.monitor__radio}>
               <input type="radio" checked={useCustomModel} onChange={() => setUseCustomModel(true)} />
               Custom model path or HuggingFace ID
             </label>
@@ -486,71 +444,54 @@ const Monitor = () => {
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
                 placeholder="e.g. urchade/gliner_medium-v2.1 or /model/gliner/my-model"
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #ccc",
-                  fontSize: 14,
-                  width: "100%",
-                  maxWidth: 480,
-                }}
+                className={styles.monitor__input}
               />
             )}
           </div>
         </div>
 
-        <div style={{ marginTop: 16 }}>
-          <label style={{ fontWeight: 600, display: "block", marginBottom: 6 }}>
-            Train / Eval Split
-          </label>
+        <div className={styles.monitor__field}>
+          <label className={styles.monitor__label}>Train / Eval Split</label>
 
-          <select
-            value={valSplitRatio}
-            onChange={(e) => setValSplitRatio(Number(e.target.value))}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              border: "1px solid #ccc",
-              minWidth: 160,
-            }}
-          >
-            <option value={0}>No split (100% train)</option>
-            <option value={0.1}>90 / 10</option>
-            <option value={0.2}>80 / 20</option>
-            <option value={0.3}>70 / 30</option>
-          </select>
+          <Select
+            value={String(valSplitRatio)}
+            onValueChange={(v) => setValSplitRatio(Number(v))}
+            fullWidth={false}
+            options={[
+              { value: "0", label: "No split (100% train)" },
+              { value: "0.1", label: "90 / 10" },
+              { value: "0.2", label: "80 / 20" },
+              { value: "0.3", label: "70 / 30" },
+            ]}
+          />
         </div>
 
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Button onClick={startTrainingHandler} disabled={isTraining}>
+        <div className={styles.monitor__actions}>
+          <Button variant="primary" onClick={startTrainingHandler} disabled={isTraining}>
             Start
           </Button>
-          <Button onClick={stopTrainingHandler} disabled={!isTraining}>
+          <Button variant="danger" onClick={stopTrainingHandler} disabled={!isTraining}>
             Stop
           </Button>
         </div>
 
         {trainingStatus && (
-          <p style={{ marginTop: 10, color: isTraining ? "green" : "#555" }}>{trainingStatus}</p>
+          <p
+            className={classNames(styles.monitor__status, {
+              [styles["monitor__status--active"]]: isTraining,
+            })}
+          >
+            {trainingStatus}
+          </p>
         )}
-      </SectionCard>
+      </Card>
 
       {/* GRID CHARTS */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+      <div className={styles.monitor__grid}>
         {/* TRAINING PROGRESS */}
-        <SectionCard title="Training Progress">
-          <div style={{ marginTop: 10 }}>
-            <div>Progress: {progress.toFixed(0)}%</div>
-            <div style={{ height: 6, background: "#eee", borderRadius: 4 }}>
-              <div
-                style={{
-                  width: `${progress}%`,
-                  height: "100%",
-                  background: "#4caf50",
-                  borderRadius: 4,
-                }}
-              />
-            </div>
+        <Card title="Training Progress">
+          <div className={styles.monitor__progress}>
+            <ProgressBar progress={progress} />
           </div>
 
           {trainingMetrics.length > 0 ? (
@@ -559,67 +500,78 @@ const Monitor = () => {
                 <XAxis dataKey="epoch" />
                 <YAxis />
                 <Tooltip />
-                <Line dataKey="loss" stroke="#ff4d4f" dot={false} />
+                <Legend />
+                <Line dataKey="loss" stroke={CHART.loss} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <p>No training data</p>
+            <p className={styles.monitor__empty}>No training data</p>
           )}
-        </SectionCard>
+        </Card>
 
-        <SectionCard title="Select Run">
-          <select value={selectedRun ?? ""} onChange={(e) => setSelectedRun(Number(e.target.value))}>
-            {runs.map((r) => (
-              <option key={r.run_id} value={r.run_id}>
-                Run #{r.run_id}
-              </option>
-            ))}
-          </select>
+        {/* SELECT RUN */}
+        <Card title="Select Run">
+          <Select
+            value={selectedRun !== null ? String(selectedRun) : ""}
+            onValueChange={(v) => setSelectedRun(Number(v))}
+            placeholder="Select a run"
+            fullWidth={false}
+            options={runs.map((r) => ({ value: String(r.run_id), label: `Run #${r.run_id}` }))}
+          />
 
-          <div style={{ marginTop: 8, fontSize: 13, opacity: 0.7 }}>
-            Selected Run: {selectedRun ?? "None"}
-          </div>
-        </SectionCard>
+          <div className={styles["monitor__run-info"]}>Selected Run: {selectedRun ?? "None"}</div>
+        </Card>
 
         {/* PER LABEL */}
-        <SectionCard title="Per-label Evaluation">
+        <Card title="Per-label Evaluation">
           {chartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={chartData}>
-                <XAxis dataKey="labelName" />
+                <XAxis dataKey="label" />
                 <YAxis domain={[0, 1]} />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="precision" />
-                <Bar dataKey="recall" />
-                <Bar dataKey="f1" />
+                <Bar dataKey="exact_f1" fill={CHART.exactF1} />
+                <Bar dataKey="relaxed_f1" fill={CHART.relaxedF1} />
+                <Bar dataKey="precision" fill={CHART.precision} />
+                <Bar dataKey="recall" fill={CHART.recall} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <p>No evaluation data</p>
+            <p className={styles.monitor__empty}>No evaluation data</p>
           )}
-        </SectionCard>
+        </Card>
       </div>
 
-      <SectionCard title="Run Comparison Heatmap (All Runs)">
-        <div style={{ marginBottom: 10 }}>
-          <label style={{ fontWeight: 600 }}>Metric: </label>
-          <select
+      {/* HEATMAP */}
+      <Card title="Run Comparison Heatmap (All Runs)">
+        <div className={styles["monitor__heatmap-controls"]}>
+          <label className={styles.monitor__label}>Metric:</label>
+          <Select
             value={metricMode}
-            onChange={(e) => setMetricMode(e.target.value as "f1" | "precision" | "recall")}
-          >
-            <option value="f1">F1</option>
-            <option value="precision">Precision</option>
-            <option value="recall">Recall</option>
-          </select>
+            onValueChange={(v) => setMetricMode(v as "f1" | "precision" | "recall")}
+            fullWidth={false}
+            options={[
+              { value: "f1", label: "F1" },
+              { value: "precision", label: "Precision" },
+              { value: "recall", label: "Recall" },
+            ]}
+          />
         </div>
 
         {heatmapData.length > 0 ? (
-          <div style={{ overflowX: "auto" }}>
+          <div className={styles.monitor__heatmap}>
             <svg width={900} height={400}>
               {/* LABEL HEADERS */}
               {labelKeys.map((label, i) => (
-                <text key={label} x={120 + i * 80} y={20} fontSize={12} textAnchor="middle">
+                <text
+                  key={label}
+                  x={120 + i * 80}
+                  y={20}
+                  fontSize={12}
+                  textAnchor="middle"
+                  className={styles["monitor__heatmap-text"]}
+                >
                   {label}
                 </text>
               ))}
@@ -628,7 +580,12 @@ const Monitor = () => {
               {heatmapData.map((row, rowIndex) => (
                 <g key={row.run}>
                   {/* RUN LABEL */}
-                  <text x={10} y={60 + rowIndex * 40} fontSize={12}>
+                  <text
+                    x={10}
+                    y={60 + rowIndex * 40}
+                    fontSize={12}
+                    className={styles["monitor__heatmap-text"]}
+                  >
                     Run {row.run}
                   </text>
 
@@ -644,7 +601,7 @@ const Monitor = () => {
                         width={70}
                         height={30}
                         fill={getColor(value)}
-                        stroke="#fff"
+                        className={styles["monitor__heatmap-cell"]}
                         onMouseEnter={() => setHovered({ run: row.run, label, value })}
                         onMouseLeave={() => setHovered(null)}
                       />
@@ -656,18 +613,7 @@ const Monitor = () => {
 
             {/* TOOLTIP */}
             {hovered && (
-              <div
-                style={{
-                  position: "fixed",
-                  left: 20,
-                  bottom: 20,
-                  padding: 10,
-                  background: "#111",
-                  color: "#fff",
-                  borderRadius: 8,
-                  fontSize: 13,
-                }}
-              >
+              <div className={styles.monitor__tooltip}>
                 <div>
                   <b>Run:</b> {hovered.run}
                 </div>
@@ -681,9 +627,11 @@ const Monitor = () => {
             )}
           </div>
         ) : (
-          <p>No data</p>
+          <p className={styles.monitor__empty}>No data</p>
         )}
-      </SectionCard>
+      </Card>
+
+      <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} duration={5000} />
     </Layout>
   );
 };
