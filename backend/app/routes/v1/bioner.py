@@ -2,20 +2,42 @@ import requests
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
-from sqlmodel import Session, select
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
+from sqlmodel import Session, func, select
 
 from app.core.database import Dataset, User, engine, get_session
 from app.core.settings import settings
 from app.interfaces import Entity, LabelsInput, NERRequest
 from app.library.record_processing import link_dates_for_record
-from app.models_db import ExtractionJob, Record, SourceTerm, SourceTermEx, Model
+from app.models_db import (
+    ExtractionJob,
+    Model,
+    Record,
+    SourceTerm,
+    SourceTermEx,
+    TrainingRun,
+)
 from app.routes.v1.auth import get_current_user
 from app.schemas import (
     ExtractionJobStartResponse,
     ExtractionJobStatusResponse,
+    FullStatsResponse,
+    GLiNERTrainingRequest,
     MessageOutput,
+    RunEvaluationResponse,
+    TrainingRunSummary,
+    TrainingStartResponse,
 )
+from app.services import bioner_client, evaluation_service, training_service
+from app.services.websocket_manager import manager
 
 router = APIRouter(tags=["BioNER"])
 
@@ -662,3 +684,132 @@ def evaluate(model_id: int, dataset_id: int):
             ]
 
             # compare here
+
+
+# ================================================
+# Training / monitoring routes
+# ================================================
+
+
+@router.post("/training/start", response_model=TrainingStartResponse)
+def start_training(
+    req: GLiNERTrainingRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    run = training_service.create_run(
+        db,
+        dataset_id=req.dataset_id,
+        base_model=req.base_model,
+        labels=req.labels,
+        val_ratio=req.val_ratio,
+    )
+    try:
+        bioner_client.start_training(
+            {
+                "run_id": run.id,
+                "dataset_id": req.dataset_id,
+                "labels": req.labels,
+                "base_model": req.base_model,
+                "val_ratio": req.val_ratio,
+            }
+        )
+    except Exception as exc:  # trainer unreachable -> mark failed, but still return run
+        training_service.fail_run(db, run.id, f"failed to start trainer: {exc}")
+    return TrainingStartResponse(run_id=run.id)
+
+
+@router.post("/training/stop/{run_id}", response_model=MessageOutput)
+def stop_training(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    training_service.stop_run(db, run_id)
+    try:
+        bioner_client.stop_training(run_id)
+    except Exception:
+        pass
+    return MessageOutput(message="stopped")
+
+
+@router.get("/datasets/{dataset_id}/full-stats", response_model=FullStatsResponse)
+def full_stats(
+    dataset_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    total_records = db.exec(
+        select(func.count(Record.id)).where(Record.dataset_id == dataset_id)
+    ).one()
+    total_terms = db.exec(
+        select(func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id == dataset_id)
+    ).one()
+    rows = db.exec(
+        select(SourceTerm.label, func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id == dataset_id)
+        .group_by(SourceTerm.label)
+    ).all()
+    return FullStatsResponse(
+        totalRecords=total_records,
+        totalTerms=total_terms,
+        labelDistribution={label: count for label, count in rows},
+    )
+
+
+@router.get("/datasets/{dataset_id}/runs", response_model=List[TrainingRunSummary])
+def list_runs(
+    dataset_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    runs = db.exec(
+        select(TrainingRun)
+        .where(TrainingRun.dataset_id == dataset_id)
+        .order_by(TrainingRun.id.desc())
+    ).all()
+    return [TrainingRunSummary(run_id=r.id, status=r.status) for r in runs]
+
+
+@router.get("/runs/{run_id}/evaluation", response_model=RunEvaluationResponse)
+def run_evaluation(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    run = db.get(TrainingRun, run_id)
+    per_label = {}
+    if run is not None and run.model_id is not None:
+        per_label = evaluation_service.get_per_label(db, run.model_id)
+    return RunEvaluationResponse(run_id=run_id, per_label=per_label)
+
+
+@router.get("/datasets/{dataset_id}/runs/evaluations")
+def dataset_runs_evaluations(
+    dataset_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    runs = db.exec(
+        select(TrainingRun).where(TrainingRun.dataset_id == dataset_id)
+    ).all()
+    out = []
+    for r in runs:
+        per_label = (
+            evaluation_service.get_per_label(db, r.model_id) if r.model_id else {}
+        )
+        out.append({"run_id": r.id, "per_label": per_label})
+    return out
+
+
+@router.websocket("/ws/training")
+async def ws_training(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
