@@ -5,6 +5,7 @@ from pathlib import Path
 from argparse import ArgumentParser, ArgumentTypeError
 from app.interfaces import NERRequest
 from app.engines import build_engine
+from app.routes_training import router as training_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -120,4 +121,5 @@ if __name__ == "__main__":
         info_path="/model/info",
         model_metadata=model_metadata
     )
+    server.app.include_router(training_router)
     server.run(host=args.host, port=args.port)
