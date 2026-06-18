@@ -7,3 +7,6 @@
 
 # Local & trained model artifacts (folder created at runtime by the bioner volume)
 bioner/models/
+
+# devflow worktrees
+.devflow

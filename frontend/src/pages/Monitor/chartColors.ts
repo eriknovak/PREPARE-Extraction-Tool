@@ -1,12 +1,14 @@
+import { CHART_TOKENS } from "@components/charts";
+
 /** Chart color palette for the monitoring dashboard.
  *
- * These hex values mirror the design tokens in `src/index.css` and are used
- * directly by recharts and SVG elements that cannot consume CSS variables.
+ * Derived from the shared `CHART_TOKENS` (mirrored from `src/index.css`) so the
+ * dashboard charts stay in sync with the global brand palette.
  */
 export const CHART = {
-  loss: "#dc2626",
-  precision: "#144d70",
-  recall: "#3b82f6",
-  exactF1: "#269b6f",
-  relaxedF1: "#f59e0b",
+  loss: CHART_TOKENS.error,
+  precision: CHART_TOKENS.primary,
+  recall: CHART_TOKENS.info,
+  exactF1: CHART_TOKENS.success,
+  relaxedF1: CHART_TOKENS.warning,
 } as const;
