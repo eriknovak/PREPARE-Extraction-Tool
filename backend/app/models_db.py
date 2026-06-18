@@ -101,6 +101,17 @@ class Dataset(SQLModel, table=True):
     )
 
 
+class ModelTrainRecordLink(SQLModel, table=True):
+    """Link table associating a trained Model with the Records used to train it."""
+
+    model_id: Optional[int] = Field(
+        default=None, foreign_key="model.id", primary_key=True
+    )
+    record_id: Optional[int] = Field(
+        default=None, foreign_key="record.id", primary_key=True
+    )
+
+
 class Record(SQLModel, table=True):
     """
     Record model representing a text entry within a dataset.
@@ -284,14 +295,6 @@ class Model(SQLModel, table=True):
 
     # One-to-one back to the training run that produced this model
     training_run: Optional["TrainingRun"] = Relationship(back_populates="model")
-
-class ModelTrainRecordLink(SQLModel, table=True):
-    model_id: Optional[int] = Field(
-        default=None, foreign_key="model.id", primary_key=True
-    )
-    record_id: Optional[int] = Field(
-        default=None, foreign_key="record.id", primary_key=True
-    )
 
 class Evaluation(SQLModel, table=True):
 
