@@ -1,15 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useEffect, useRef, useState } from "react";
 import classNames from "classnames";
 
 import Button from "@components/Button";
@@ -23,7 +12,6 @@ import { usePageTitle } from "@hooks/usePageTitle";
 import { useToast } from "@hooks/useToast";
 import {
   getAllEvaluations,
-  getAllRunEvaluations,
   getDatasetRuns,
   getDatasets,
   getDatasetStats,
@@ -37,35 +25,16 @@ import type {
   MonitorDataset,
   MonitorDatasetStats,
   MonitorRun,
-  PerLabelMetrics,
   TrainingMetric,
 } from "types";
 
 import LabelSelector from "./LabelSelector";
-import { CHART } from "./chartColors";
+import TrainingLossChart from "./charts/TrainingLossChart";
+import PerformanceChart from "./charts/PerformanceChart";
+import ModelComparisonHeatmap from "./charts/ModelComparisonHeatmap";
 import styles from "./styles.module.css";
 
 const DEFAULT_MODEL = "urchade/gliner_small-v2.1";
-
-/** Prefer relaxed F1, then exact F1, then legacy f1 field. */
-const readF1 = (m: PerLabelMetrics): number => m.relaxed_f1 ?? m.exact_f1 ?? m.f1 ?? 0;
-
-const readMetric = (m: PerLabelMetrics, mode: "f1" | "precision" | "recall"): number => {
-  if (mode === "precision") return m.precision ?? 0;
-  if (mode === "recall") return m.recall ?? 0;
-  return readF1(m);
-};
-
-interface HeatmapRow {
-  run: number;
-  labels: Record<string, number>;
-}
-
-interface HoveredCell {
-  run: number;
-  label: string;
-  value: number;
-}
 
 const Monitor = () => {
   usePageTitle("Monitoring");
@@ -88,9 +57,8 @@ const Monitor = () => {
 
   const [datasets, setDatasets] = useState<MonitorDataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
-  const [, setAllRunEvaluations] = useState<EvaluationResponse[]>([]);
   const [evaluations, setEvaluations] = useState<EvaluationResponse[]>([]);
-  const [hovered, setHovered] = useState<HoveredCell | null>(null);
+  const [evaluationsLoading, setEvaluationsLoading] = useState(false);
   const [datasetStats, setDatasetStats] = useState<MonitorDatasetStats | null>(null);
 
   const [runs, setRuns] = useState<MonitorRun[]>([]);
@@ -98,6 +66,7 @@ const Monitor = () => {
   const [valSplitRatio, setValSplitRatio] = useState<number>(0.1);
 
   const [evaluation, setEvaluation] = useState<EvaluationResponse | null>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
 
   const [trainingMetrics, setTrainingMetrics] = useState<TrainingMetric[]>([]);
   const [isTraining, setIsTraining] = useState(false);
@@ -114,7 +83,10 @@ const Monitor = () => {
   const totalEpochsRef = useRef(4);
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
 
-  const [metricMode, setMetricMode] = useState<"f1" | "precision" | "recall">("f1");
+  const trainingCardRef = useRef<HTMLDivElement | null>(null);
+
+  const scrollToTraining = () =>
+    trainingCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
 
   // ------------------ RESET ------------------
 
@@ -126,7 +98,7 @@ const Monitor = () => {
     setIsTraining(false);
     setTrainingStatus("");
     setSelectedLabels([]);
-    setAllRunEvaluations([]);
+    setEvaluations([]);
   };
 
   // ------------------ DATASETS ------------------
@@ -155,12 +127,16 @@ const Monitor = () => {
     setDatasetStats(data);
   };
 
+  // ------------------ ALL RUN EVAL (comparison) ------------------
+
   useEffect(() => {
     if (!selectedDatasetId || !token) return;
 
-    getAllEvaluations(selectedDatasetId).then((data) => {
-      setEvaluations(Array.isArray(data) ? data : []);
-    });
+    setEvaluationsLoading(true);
+    getAllEvaluations(selectedDatasetId)
+      .then((data) => setEvaluations(Array.isArray(data) ? data : []))
+      .catch(() => setEvaluations([]))
+      .finally(() => setEvaluationsLoading(false));
   }, [selectedDatasetId, token]);
 
   // ------------------ RUNS ------------------
@@ -185,83 +161,20 @@ const Monitor = () => {
     fetchRuns();
   }, [selectedDatasetId, token]);
 
-  // ------------------ ALL RUN EVAL ------------------
-
-  useEffect(() => {
-    if (!selectedDatasetId || !token) return;
-
-    getAllRunEvaluations(selectedDatasetId).then((data) => {
-      setAllRunEvaluations(data ?? []);
-    });
-  }, [selectedDatasetId, token]);
-
   // ------------------ SINGLE EVAL ------------------
 
   useEffect(() => {
-    if (!selectedRun || !token) return;
+    if (!selectedRun || !token) {
+      setEvaluation(null);
+      return;
+    }
 
-    getRunEvaluation(selectedRun).then((data) => {
-      setEvaluation(data);
-    });
+    setEvaluationLoading(true);
+    getRunEvaluation(selectedRun)
+      .then((data) => setEvaluation(data))
+      .catch(() => setEvaluation(null))
+      .finally(() => setEvaluationLoading(false));
   }, [selectedRun, token]);
-
-  // ------------------ LABEL NORMALIZATION ------------------
-
-  const normalizeLabel = (label: string) => label.normalize("NFD").replace(/[̀-ͯ]/g, "");
-
-  // ------------------ SAFE API DATA ------------------
-
-  const safeRuns = evaluations;
-
-  const labelKeys = useMemo(
-    () =>
-      Array.from(
-        new Set(safeRuns.flatMap((run) => Object.keys(run?.per_label ?? {}).map(normalizeLabel)))
-      ).sort(),
-    [safeRuns]
-  );
-
-  const heatmapData = useMemo<HeatmapRow[]>(() => {
-    return safeRuns.map((run) => {
-      const row: HeatmapRow = {
-        run: run.run_id,
-        labels: {},
-      };
-
-      const perLabel: { [label: string]: PerLabelMetrics } = run.per_label ?? {};
-
-      Object.entries(perLabel).forEach(([label, metrics]) => {
-        const norm = normalizeLabel(label);
-        row.labels[norm] = readMetric(metrics, metricMode);
-      });
-
-      // ensure all labels exist
-      labelKeys.forEach((label) => {
-        if (row.labels[label] === undefined) {
-          row.labels[label] = 0;
-        }
-      });
-
-      return row;
-    });
-  }, [safeRuns, metricMode, labelKeys]);
-
-  const getColor = (value: number) => {
-    // clamp 0-1, interpolate from the "loss" (red) token to the "exactF1" (green) token
-    const v = Math.max(0, Math.min(1, value));
-
-    const lerp = (from: number, to: number) => Math.round(from + (to - from) * v);
-    const hexToRgb = (hex: string): [number, number, number] => [
-      parseInt(hex.slice(1, 3), 16),
-      parseInt(hex.slice(3, 5), 16),
-      parseInt(hex.slice(5, 7), 16),
-    ];
-
-    const [r0, g0, b0] = hexToRgb(CHART.loss);
-    const [r1, g1, b1] = hexToRgb(CHART.exactF1);
-
-    return `rgb(${lerp(r0, r1)},${lerp(g0, g1)},${lerp(b0, b1)})`;
-  };
 
   // ------------------ WEBSOCKET ------------------
 
@@ -329,6 +242,7 @@ const Monitor = () => {
     };
 
     return () => ws.close();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDatasetId, token]);
 
   // ------------------ TRAINING ------------------
@@ -368,270 +282,183 @@ const Monitor = () => {
     setTrainingStatus("Stop requested.");
   };
 
-  // ------------------ CHART DATA ------------------
-
-  const chartData = evaluation?.per_label
-    ? (Object.entries(evaluation.per_label) as [string, PerLabelMetrics][])
-        .filter(([k]) => !["micro avg", "macro avg", "weighted avg"].includes(k))
-        .map(([label, m]) => ({
-          label,
-          exact_f1: m.exact_f1 ?? 0,
-          relaxed_f1: m.relaxed_f1 ?? 0,
-          precision: m.precision ?? 0,
-          recall: m.recall ?? 0,
-        }))
-    : [];
-
   // ------------------ RENDER ------------------
 
   return (
     <Layout>
-      <h1 className={styles.monitor__title}>Monitoring Dashboard</h1>
-
-      {/* DATASET */}
-      <Card title="Dataset">
-        <div className={styles["monitor__dataset-list"]}>
-          {datasets.map((d) => (
-            <Button
-              key={d.id}
-              onClick={() => selectDataset(d.id)}
-              variant={selectedDatasetId === d.id ? "primary" : "outline"}
-            >
-              {d.name}
-            </Button>
-          ))}
-        </div>
-      </Card>
-
-      {/* STATS */}
-      {datasetStats && (
-        <Card title={`Dataset ${selectedDatasetId}`}>
-          <div className={styles.monitor__stats}>
-            <StatCard label="Records" value={datasetStats.totalRecords} />
-            <StatCard label="Terms" value={datasetStats.totalTerms} />
-          </div>
-
-          <LabelSelector
-            datasetId={selectedDatasetId}
-            datasetStats={datasetStats}
-            onChange={setSelectedLabels}
-          />
-        </Card>
-      )}
-
-      {/* TRAINING */}
-      <Card title="Training">
-        {/* Model selector */}
-        <div className={styles.monitor__field}>
-          <p className={styles.monitor__label}>Base model</p>
-
-          <div className={styles["monitor__radio-group"]}>
-            <label className={styles.monitor__radio}>
-              <input type="radio" checked={!useCustomModel} onChange={() => setUseCustomModel(false)} />
-              <span>
-                Default: <code className={styles.monitor__code}>{DEFAULT_MODEL}</code>
-              </span>
-            </label>
-
-            <label className={styles.monitor__radio}>
-              <input type="radio" checked={useCustomModel} onChange={() => setUseCustomModel(true)} />
-              Custom model path or HuggingFace ID
-            </label>
-
-            {useCustomModel && (
-              <input
-                type="text"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder="e.g. urchade/gliner_medium-v2.1 or /model/gliner/my-model"
-                className={styles.monitor__input}
-              />
-            )}
-          </div>
-        </div>
-
-        <div className={styles.monitor__field}>
-          <label className={styles.monitor__label}>Train / Eval Split</label>
-
-          <Select
-            value={String(valSplitRatio)}
-            onValueChange={(v) => setValSplitRatio(Number(v))}
-            fullWidth={false}
-            options={[
-              { value: "0", label: "No split (100% train)" },
-              { value: "0.1", label: "90 / 10" },
-              { value: "0.2", label: "80 / 20" },
-              { value: "0.3", label: "70 / 30" },
-            ]}
-          />
-        </div>
-
-        <div className={styles.monitor__actions}>
-          <Button variant="primary" onClick={startTrainingHandler} disabled={isTraining}>
-            Start
-          </Button>
-          <Button variant="danger" onClick={stopTrainingHandler} disabled={!isTraining}>
-            Stop
-          </Button>
-        </div>
-
-        {trainingStatus && (
-          <p
-            className={classNames(styles.monitor__status, {
-              [styles["monitor__status--active"]]: isTraining,
-            })}
-          >
-            {trainingStatus}
+      <div className={styles.page}>
+        {/* HEADER */}
+        <header className={styles.header}>
+          <h1 className={styles.header__title}>Monitoring Dashboard</h1>
+          <p className={styles.header__subtitle}>
+            Train NER models, follow live training metrics, and compare run performance.
           </p>
+        </header>
+
+        {/* ─────────────── SETUP ─────────────── */}
+
+        {/* DATASET */}
+        <Card title="1 · Dataset">
+          {datasets.length > 0 ? (
+            <div className={styles["dataset-list"]}>
+              {datasets.map((d) => (
+                <Button
+                  key={d.id}
+                  onClick={() => selectDataset(d.id)}
+                  variant={selectedDatasetId === d.id ? "primary" : "outline"}
+                >
+                  {d.name}
+                </Button>
+              ))}
+            </div>
+          ) : (
+            <p className={styles.muted}>No datasets available.</p>
+          )}
+        </Card>
+
+        {/* STATS + LABELS */}
+        {datasetStats && (
+          <Card title="2 · Labels & statistics">
+            <div className={styles.stats}>
+              <StatCard label="Records" value={datasetStats.totalRecords} />
+              <StatCard label="Terms" value={datasetStats.totalTerms} />
+            </div>
+
+            <LabelSelector
+              datasetId={selectedDatasetId}
+              datasetStats={datasetStats}
+              onChange={setSelectedLabels}
+            />
+          </Card>
         )}
-      </Card>
 
-      {/* GRID CHARTS */}
-      <div className={styles.monitor__grid}>
-        {/* TRAINING PROGRESS */}
-        <Card title="Training Progress">
-          <div className={styles.monitor__progress}>
-            <ProgressBar progress={progress} />
-          </div>
+        {/* TRAINING */}
+        <div ref={trainingCardRef}>
+          <Card title="3 · Training">
+            {/* Model selector */}
+            <div className={styles.field}>
+              <p className={styles.field__label}>Base model</p>
 
-          {trainingMetrics.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={trainingMetrics}>
-                <XAxis dataKey="epoch" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line dataKey="loss" stroke={CHART.loss} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className={styles.monitor__empty}>No training data</p>
-          )}
-        </Card>
+              <div className={styles["radio-group"]}>
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    checked={!useCustomModel}
+                    onChange={() => setUseCustomModel(false)}
+                  />
+                  <span>
+                    Default: <code className={styles.code}>{DEFAULT_MODEL}</code>
+                  </span>
+                </label>
 
-        {/* SELECT RUN */}
-        <Card title="Select Run">
-          <Select
-            value={selectedRun !== null ? String(selectedRun) : ""}
-            onValueChange={(v) => setSelectedRun(Number(v))}
-            placeholder="Select a run"
-            fullWidth={false}
-            options={runs.map((r) => ({ value: String(r.run_id), label: `Run #${r.run_id}` }))}
-          />
+                <label className={styles.radio}>
+                  <input
+                    type="radio"
+                    checked={useCustomModel}
+                    onChange={() => setUseCustomModel(true)}
+                  />
+                  Custom model path or HuggingFace ID
+                </label>
 
-          <div className={styles["monitor__run-info"]}>Selected Run: {selectedRun ?? "None"}</div>
-        </Card>
+                {useCustomModel && (
+                  <input
+                    type="text"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder="e.g. urchade/gliner_medium-v2.1 or /model/gliner/my-model"
+                    className={styles.input}
+                  />
+                )}
+              </div>
+            </div>
 
-        {/* PER LABEL */}
-        <Card title="Per-label Evaluation">
-          {chartData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={chartData}>
-                <XAxis dataKey="label" />
-                <YAxis domain={[0, 1]} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="exact_f1" fill={CHART.exactF1} />
-                <Bar dataKey="relaxed_f1" fill={CHART.relaxedF1} />
-                <Bar dataKey="precision" fill={CHART.precision} />
-                <Bar dataKey="recall" fill={CHART.recall} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className={styles.monitor__empty}>No evaluation data</p>
-          )}
-        </Card>
-      </div>
+            <div className={styles.field}>
+              <label className={styles.field__label}>Train / Eval split</label>
 
-      {/* HEATMAP */}
-      <Card title="Run Comparison Heatmap (All Runs)">
-        <div className={styles["monitor__heatmap-controls"]}>
-          <label className={styles.monitor__label}>Metric:</label>
-          <Select
-            value={metricMode}
-            onValueChange={(v) => setMetricMode(v as "f1" | "precision" | "recall")}
-            fullWidth={false}
-            options={[
-              { value: "f1", label: "F1" },
-              { value: "precision", label: "Precision" },
-              { value: "recall", label: "Recall" },
-            ]}
-          />
+              <Select
+                value={String(valSplitRatio)}
+                onValueChange={(v) => setValSplitRatio(Number(v))}
+                fullWidth={false}
+                options={[
+                  { value: "0", label: "No split (100% train)" },
+                  { value: "0.1", label: "90 / 10" },
+                  { value: "0.2", label: "80 / 20" },
+                  { value: "0.3", label: "70 / 30" },
+                ]}
+              />
+            </div>
+
+            <div className={styles.actions}>
+              <Button
+                variant="primary"
+                onClick={startTrainingHandler}
+                disabled={isTraining || !selectedDatasetId}
+              >
+                Start
+              </Button>
+              <Button variant="danger" onClick={stopTrainingHandler} disabled={!isTraining}>
+                Stop
+              </Button>
+
+              {trainingStatus && (
+                <p
+                  className={classNames(styles.status, {
+                    [styles["status--active"]]: isTraining,
+                  })}
+                >
+                  {trainingStatus}
+                </p>
+              )}
+            </div>
+          </Card>
         </div>
 
-        {heatmapData.length > 0 ? (
-          <div className={styles.monitor__heatmap}>
-            <svg width={900} height={400}>
-              {/* LABEL HEADERS */}
-              {labelKeys.map((label, i) => (
-                <text
-                  key={label}
-                  x={120 + i * 80}
-                  y={20}
-                  fontSize={12}
-                  textAnchor="middle"
-                  className={styles["monitor__heatmap-text"]}
-                >
-                  {label}
-                </text>
-              ))}
+        {/* ─────────────── LIVE TRAINING ‖ EVALUATION ─────────────── */}
 
-              {/* ROWS */}
-              {heatmapData.map((row, rowIndex) => (
-                <g key={row.run}>
-                  {/* RUN LABEL */}
-                  <text
-                    x={10}
-                    y={60 + rowIndex * 40}
-                    fontSize={12}
-                    className={styles["monitor__heatmap-text"]}
-                  >
-                    Run {row.run}
-                  </text>
+        <div className={styles["charts-row"]}>
+          <Card title="Training progress">
+            <div className={styles.progress}>
+              <ProgressBar value={progress} />
+            </div>
 
-                  {/* CELLS */}
-                  {labelKeys.map((label, colIndex) => {
-                    const value = row.labels[label];
+            <TrainingLossChart
+              metrics={trainingMetrics}
+              isTraining={isTraining}
+              hasRuns={runs.length > 0}
+              onConfigure={scrollToTraining}
+            />
+          </Card>
 
-                    return (
-                      <rect
-                        key={label}
-                        x={120 + colIndex * 80}
-                        y={40 + rowIndex * 40}
-                        width={70}
-                        height={30}
-                        fill={getColor(value)}
-                        className={styles["monitor__heatmap-cell"]}
-                        onMouseEnter={() => setHovered({ run: row.run, label, value })}
-                        onMouseLeave={() => setHovered(null)}
-                      />
-                    );
-                  })}
-                </g>
-              ))}
-            </svg>
+          <Card
+            title="Evaluation"
+            actions={
+              runs.length > 0 ? (
+                <Select
+                  value={selectedRun !== null ? String(selectedRun) : ""}
+                  onValueChange={(v) => setSelectedRun(Number(v))}
+                  placeholder="Select a run"
+                  fullWidth={false}
+                  options={runs.map((r) => ({ value: String(r.run_id), label: `Run #${r.run_id}` }))}
+                />
+              ) : undefined
+            }
+          >
+            <PerformanceChart
+              evaluation={evaluation}
+              loading={evaluationLoading}
+              hasSelectedRun={selectedRun !== null}
+            />
+          </Card>
+        </div>
 
-            {/* TOOLTIP */}
-            {hovered && (
-              <div className={styles.monitor__tooltip}>
-                <div>
-                  <b>Run:</b> {hovered.run}
-                </div>
-                <div>
-                  <b>Label:</b> {hovered.label}
-                </div>
-                <div>
-                  <b>Value:</b> {hovered.value.toFixed(3)}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className={styles.monitor__empty}>No data</p>
-        )}
-      </Card>
+        {/* ─────────────── COMPARISON ─────────────── */}
 
-      <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} duration={5000} />
+        <Card title="Run comparison">
+          <ModelComparisonHeatmap evaluations={evaluations} loading={evaluationsLoading} />
+        </Card>
+
+        <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} duration={5000} />
+      </div>
     </Layout>
   );
 };

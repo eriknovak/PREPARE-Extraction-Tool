@@ -1,19 +1,44 @@
-.monitor__title {
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--color-text);
-  margin-bottom: var(--space-3);
+/* ------------------ PAGE LAYOUT ------------------ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
 }
 
-.monitor__grid {
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+}
+
+.header__subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.muted {
+  color: var(--color-text-muted);
+}
+
+/* Two charts side-by-side on wide screens, stacked when narrow. */
+.charts-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   gap: var(--space-4);
 }
 
 /* ------------------ DATASET SELECTOR ------------------ */
 
-.monitor__dataset-list {
+.dataset-list {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
@@ -21,7 +46,7 @@
 
 /* ------------------ STATS ------------------ */
 
-.monitor__stats {
+.stats {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
@@ -30,24 +55,24 @@
 
 /* ------------------ TRAINING FORM ------------------ */
 
-.monitor__field {
+.field {
   margin-bottom: var(--space-3);
 }
 
-.monitor__label {
+.field__label {
   display: block;
-  margin-bottom: var(--space-1);
+  margin: 0 0 var(--space-1);
   font-weight: 600;
   color: var(--color-text);
 }
 
-.monitor__radio-group {
+.radio-group {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
 
-.monitor__radio {
+.radio {
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -55,7 +80,7 @@
   color: var(--color-text);
 }
 
-.monitor__code {
+.code {
   background: var(--color-surface-alt);
   border: 1px solid var(--color-border);
   padding: 2px 6px;
@@ -63,7 +88,7 @@
   color: var(--color-text);
 }
 
-.monitor__input {
+.input {
   width: 100%;
   max-width: 480px;
   padding: 8px 12px;
@@ -74,87 +99,33 @@
   background: var(--color-surface);
 }
 
-.monitor__input:focus {
+.input:focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 2px rgba(20, 77, 112, 0.15);
 }
 
-.monitor__actions {
+.actions {
   display: flex;
   gap: var(--space-2);
   align-items: center;
+  flex-wrap: wrap;
   margin-top: var(--space-3);
 }
 
-.monitor__status {
-  margin-top: var(--space-2);
+.status {
+  margin: 0;
   color: var(--color-text-muted);
 }
 
-.monitor__status--active {
+.status--active {
   color: var(--color-success);
 }
 
-/* ------------------ SELECT FALLBACK ------------------ */
+/* ------------------ PROGRESS ------------------ */
 
-.monitor__select {
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  min-width: 160px;
-  font-size: 14px;
-  color: var(--color-text);
-  background: var(--color-surface);
-}
-
-/* ------------------ PROGRESS / CHARTS ------------------ */
-
-.monitor__progress {
+.progress {
   margin-bottom: var(--space-3);
-}
-
-.monitor__empty {
-  color: var(--color-text-muted);
-}
-
-.monitor__run-info {
-  margin-top: var(--space-2);
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-/* ------------------ HEATMAP ------------------ */
-
-.monitor__heatmap {
-  overflow-x: auto;
-}
-
-.monitor__heatmap-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.monitor__heatmap-text {
-  fill: var(--color-text);
-}
-
-.monitor__heatmap-cell {
-  stroke: var(--color-surface);
-}
-
-.monitor__tooltip {
-  position: fixed;
-  left: 20px;
-  bottom: 20px;
-  padding: var(--space-2);
-  background: var(--color-text);
-  color: var(--color-surface);
-  border-radius: var(--radius-lg);
-  font-size: 13px;
-  box-shadow: var(--shadow-card);
 }
 
 /* ------------------ LABEL SELECTOR ------------------ */
