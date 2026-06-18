@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
@@ -255,6 +255,12 @@ class Model(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     version: str
+    base_model: Optional[str] = Field(default=None)
+    path: Optional[str] = Field(default=None)
+    dataset_id: Optional[int] = Field(
+        default=None, foreign_key="dataset.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Relationship to SourceTermEx (one-to-many)
     # SourceTermEx extracted with this model
@@ -275,6 +281,9 @@ class Model(SQLModel, table=True):
         back_populates="model",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+    # One-to-one back to the training run that produced this model
+    training_run: Optional["TrainingRun"] = Relationship(back_populates="model")
 
 class ModelTrainRecordLink(SQLModel, table=True):
     model_id: Optional[int] = Field(
@@ -305,6 +314,48 @@ class Evaluation(SQLModel, table=True):
         foreign_key="model.id", ondelete="CASCADE", nullable=False
     )
     model: Optional["Model"] = Relationship(back_populates="evaluations")
+
+
+class TrainingRun(SQLModel, table=True):
+    """A GLiNER training run and its lifecycle. Produces a Model on success."""
+
+    __tablename__ = "training_run"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    dataset_id: int = Field(
+        foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    base_model: str
+    labels: List[str] = Field(sa_column=Column(JSON))
+    val_ratio: float = Field(default=0.0)
+    status: str = Field(default="pending", index=True)  # pending|running|completed|failed|stopped
+    error_message: Optional[str] = Field(default=None)
+    model_id: Optional[int] = Field(
+        default=None, foreign_key="model.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    metrics: list["TrainingMetric"] = Relationship(
+        back_populates="run",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    model: Optional["Model"] = Relationship(back_populates="training_run")
+
+
+class TrainingMetric(SQLModel, table=True):
+    """Per-epoch training metric (loss curve)."""
+
+    __tablename__ = "training_metric"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(
+        foreign_key="training_run.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    epoch: int
+    loss: Optional[float] = Field(default=None)
+
+    run: Optional["TrainingRun"] = Relationship(back_populates="metrics")
+
 
 class Cluster(SQLModel, table=True):
     """
