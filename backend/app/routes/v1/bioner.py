@@ -36,7 +36,12 @@ from app.schemas import (
     TrainingRunSummary,
     TrainingStartResponse,
 )
-from app.services import bioner_client, evaluation_service, training_service
+from app.services import (
+    bioner_client,
+    evaluation_service,
+    gliner_data_service,
+    training_service,
+)
 from app.services.websocket_manager import manager
 
 router = APIRouter(tags=["BioNER"])
@@ -705,12 +710,14 @@ def start_training(
         val_ratio=req.val_ratio,
     )
     try:
+        training_data = gliner_data_service.load_reviewed_training_data(
+            db, req.dataset_id, req.labels
+        )
         bioner_client.start_training(
             {
                 "run_id": run.id,
-                "dataset_id": req.dataset_id,
-                "labels": req.labels,
                 "base_model": req.base_model,
+                "training_data": training_data,
                 "val_ratio": req.val_ratio,
             }
         )
