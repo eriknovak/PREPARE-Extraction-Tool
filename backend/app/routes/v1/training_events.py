@@ -37,11 +37,13 @@ async def receive_training_event(payload: dict, db: Session = Depends(get_sessio
     if event_type == "training_info":
         training_service.mark_running(db, run_id)
     elif event_type == "epoch_update":
-        epoch_raw = payload.get("epoch")
-        epoch = int(float(epoch_raw)) if epoch_raw is not None else 0
-        training_service.add_epoch_metric(
-            db, run_id, epoch=epoch, loss=_safe_float(payload.get("loss"))
-        )
+        # Only persist points that carry a loss value; loss-less epoch-boundary
+        # ticks are still broadcast below for the live UI.
+        loss = _safe_float(payload.get("loss"))
+        if loss is not None:
+            epoch_raw = payload.get("epoch")
+            epoch = int(float(epoch_raw)) if epoch_raw is not None else 0
+            training_service.add_epoch_metric(db, run_id, epoch=epoch, loss=loss)
     elif event_type == "evaluation_completed":
         metrics = payload.get("metrics") or {}
         per_label = metrics.get("per_label") or {}
