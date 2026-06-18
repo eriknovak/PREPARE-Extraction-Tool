@@ -3,18 +3,19 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  gap: var(--space-4);
 }
 
 .header {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
 }
 
 .header__title {
   margin: 0;
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--color-primary-dark);
 }
