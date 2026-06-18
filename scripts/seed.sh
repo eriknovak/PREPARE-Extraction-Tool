@@ -15,6 +15,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+POSTGRES_CONTAINER="PREPARE-POSTGRESQL"
+ES_CONTAINER="PREPARE-ELASTICSEARCH"
 
 # ------------------------------------------------------------
 # Load .env
@@ -39,7 +41,7 @@ echo
 # Wait for PostgreSQL
 # ------------------------------------------------------------
 echo "Waiting for PostgreSQL..."
-until docker exec PREPARE-POSTGRESQL \
+until docker exec "$POSTGRES_CONTAINER" \
   pg_isready -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" > /dev/null 2>&1
 do
   sleep 3
@@ -50,7 +52,7 @@ echo "✅ PostgreSQL is ready."
 # Check migrations
 # ------------------------------------------------------------
 echo "Checking if migrations have been executed..."
-if ! docker exec -i PREPARE-POSTGRESQL \
+if ! docker exec -i "$POSTGRES_CONTAINER" \
   psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -tAc "SELECT to_regclass('public.vocabulary');" \
   | grep -q "vocabulary"; then
   echo "❌ Table 'vocabulary' does not exist."
@@ -63,7 +65,7 @@ echo "✅ Migrations are applied."
 # Wait for Elasticsearch
 # ------------------------------------------------------------
 echo "Waiting for Elasticsearch..."
-until curl -fsS "http://localhost:9200/_cluster/health" > /dev/null; do
+until docker exec "$ES_CONTAINER" curl -fsS http://localhost:9200/_cluster/health > /dev/null; do
   sleep 3
 done
 echo "✅ Elasticsearch is ready."

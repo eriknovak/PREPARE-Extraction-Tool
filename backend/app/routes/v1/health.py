@@ -12,7 +12,7 @@ from app.core.elastic import es_client
 router = APIRouter()
 
 
-@router.post(
+@router.get(
     "/check",
     response_model=MessageOutput,
     status_code=status.HTTP_200_OK,

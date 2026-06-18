@@ -27,3 +27,8 @@
   min-width: 45px;
   text-align: right;
 }
+
+.progress-bar__label {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}

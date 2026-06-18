@@ -48,12 +48,18 @@ export type ProcessingStatus = "PENDING" | "PROCESSING" | "DONE" | "FAILED" | "D
 // Dataset types
 // ================================================
 
+export interface LabelRelation {
+  from_label: string;
+  to_label: string;
+}
+
 export interface Dataset {
   id: number;
   name: string;
   uploaded: string;
   last_modified: string;
   labels: string[];
+  label_relations: LabelRelation[];
   date_label: string | null;
   record_count: number;
   status: ProcessingStatus;
@@ -63,6 +69,7 @@ export interface Dataset {
 export interface DatasetCreate {
   name: string;
   labels: string;
+  label_relations?: string;
   file: File;
   date_label?: string;
 }
@@ -114,6 +121,16 @@ export interface RecordsOutput {
 // Source Term types
 // ================================================
 
+export interface SourceTermLink {
+  id: number;
+  from_term_id: number;
+  to_term_id: number;
+  from_term_value: string;
+  to_term_value: string;
+  from_term_label: string;
+  to_term_label: string;
+}
+
 export interface SourceTerm {
   id: number;
   value: string;
@@ -124,6 +141,7 @@ export interface SourceTerm {
   linked_visit_date?: string | null;
   manual_linked_visit_date?: boolean | null;
   linked_date_term_id?: number | null;
+  links?: SourceTermLink[];
 }
 
 export interface SourceTermCreate {
@@ -437,4 +455,48 @@ export interface ConceptSearchParams {
 
 export interface DistinctValuesOutput {
   values: string[];
+}
+
+// ================================================
+// Monitoring / training types
+// ================================================
+
+/** Minimal dataset shape used by the monitoring dashboard. */
+export interface MonitorDataset {
+  id: number;
+  name: string;
+}
+
+/** A training run identifier (optionally with status). */
+export interface MonitorRun {
+  run_id: number;
+  status?: string;
+}
+
+/** Per-label evaluation metrics returned by the bioner backend. */
+export interface PerLabelMetrics {
+  exact_f1?: number;
+  relaxed_f1?: number;
+  f1?: number;
+  precision: number;
+  recall: number;
+}
+
+/** Evaluation response for a single run. */
+export interface EvaluationResponse {
+  run_id: number;
+  per_label: { [label: string]: PerLabelMetrics };
+}
+
+/** A single training metric point streamed over the websocket. */
+export interface TrainingMetric {
+  epoch: number;
+  loss: number;
+}
+
+/** Dataset statistics used by the monitoring dashboard. */
+export interface MonitorDatasetStats {
+  totalRecords: number;
+  totalTerms: number;
+  labelDistribution: { [label: string]: number };
 }

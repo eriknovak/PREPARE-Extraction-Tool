@@ -1,8 +1,11 @@
+import json
 import litserve as ls
 import logging
+from pathlib import Path
 from argparse import ArgumentParser, ArgumentTypeError
 from app.interfaces import NERRequest
 from app.engines import build_engine
+from app.routes_training import router as training_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -14,6 +17,23 @@ def str2bool(v):
     if v.lower() in ("no", "false", "f", "n", "0"):
         return False
     raise ArgumentTypeError("Boolean value expected.")
+
+def read_model_metadata(model_dir: str) -> dict:
+        metadata_path = Path(model_dir) / "metadata.json"
+
+        if not metadata_path.exists():
+            metadata = {
+                "name": "Extraction model",
+                "version": "1.0"
+            }
+        else:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+
+            if 'name' not in metadata or 'version' not in metadata:
+                raise ValueError("metadata.json must contain at least 'name' and 'version'")
+        
+        return metadata
 
 class NERAPI(ls.LitAPI):
     def __init__(self, 
@@ -85,6 +105,7 @@ if __name__ == "__main__":
                         help="Port to run the server on."
                         )
     args = parser.parse_args()
+    model_metadata = read_model_metadata(args.model)
     api = NERAPI(
         engine=args.engine,
         model=args.model,
@@ -92,5 +113,13 @@ if __name__ == "__main__":
         prompt_path=args.prompt_path,
         use_gpu=args.use_gpu
     )
-    server = ls.LitServer(api, accelerator="auto", timeout=300, api_path="/ner")
+    server = ls.LitServer(
+        api, 
+        accelerator="auto", 
+        timeout=300, 
+        api_path="/ner", 
+        info_path="/model/info",
+        model_metadata=model_metadata
+    )
+    server.app.include_router(training_router)
     server.run(host=args.host, port=args.port)

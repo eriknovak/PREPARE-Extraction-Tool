@@ -1,11 +1,47 @@
 import re
 from math import ceil
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import Query
 from pydantic import BaseModel, Field, field_validator
 from app.models_db import Record, Concept, SourceTerm, Cluster, ProcessingStatus
+
+
+# ================================================
+# Label relation models
+# ================================================
+
+
+class LabelRelation(BaseModel):
+    """A directed 'has value' relation between two label types in a dataset."""
+
+    from_label: str
+    to_label: str
+
+
+# ================================================
+# Source term link models
+# ================================================
+
+
+class SourceTermLinkCreate(BaseModel):
+    """Request body for creating a link between two source terms."""
+
+    from_term_id: int
+    to_term_id: int
+
+
+class SourceTermLinkResponse(BaseModel):
+    """Response model for a source term link, embedding both term values for display."""
+
+    id: int
+    from_term_id: int
+    to_term_id: int
+    from_term_value: str
+    to_term_value: str
+    from_term_label: str
+    to_term_label: str
 
 
 # ================================================
@@ -165,6 +201,7 @@ class DatasetCreate(BaseModel):
 
     name: str
     labels: List[str] = Field(default_factory=list)
+    label_relations: List[LabelRelation] = Field(default_factory=list)
     date_label: Optional[str] = None
     records: List["RecordCreate"] = Field(default_factory=list)
 
@@ -182,6 +219,7 @@ class DatasetResponse(BaseModel):
     uploaded: datetime
     last_modified: datetime
     labels: List[str]
+    label_relations: List[LabelRelation] = Field(default_factory=list)
     date_label: Optional[str] = None
     status: ProcessingStatus
     error_message: Optional[str] = None
@@ -377,6 +415,24 @@ class SourceTermUpdate(BaseModel):
     linked_visit_date: Optional[datetime] = None
 
 
+class SourceTermResponse(BaseModel):
+    """Source term with its entity links included for display."""
+
+    id: int
+    value: str
+    label: str
+    start_position: Optional[int] = None
+    end_position: Optional[int] = None
+    score: Optional[float] = None
+    automatically_extracted: bool = False
+    record_id: int
+    linked_visit_date: Optional[datetime] = None
+    manual_linked_visit_date: bool = False
+    linked_date_term_id: Optional[int] = None
+    cluster_id: Optional[int] = None
+    links: List[SourceTermLinkResponse] = Field(default_factory=list)
+
+
 class SourceTermOutput(BaseModel):
     """Wrapper for single source term response."""
 
@@ -384,9 +440,9 @@ class SourceTermOutput(BaseModel):
 
 
 class SourceTermsOutput(BaseModel):
-    """Wrapper for paginated list of source terms."""
+    """Wrapper for paginated list of source terms (with entity links embedded)."""
 
-    source_terms: List[SourceTerm]
+    source_terms: List[SourceTermResponse]
     pagination: PaginationMetadata
 
 
@@ -619,3 +675,37 @@ class DistinctValuesOutput(BaseModel):
     """Response model for distinct filter values (domains, concept classes)."""
 
     values: List[str]
+
+
+# ================================================
+# Training / monitoring schemas
+# ================================================
+
+
+class GLiNERTrainingRequest(BaseModel):
+    """Request body to start a GLiNER training run."""
+
+    dataset_id: Optional[int] = None
+    labels: List[str] = Field(default_factory=list)
+    base_model: str = "urchade/gliner_small-v2.1"
+    val_ratio: float = 0.1
+
+
+class TrainingStartResponse(BaseModel):
+    run_id: int
+
+
+class TrainingRunSummary(BaseModel):
+    run_id: int
+    status: str
+
+
+class RunEvaluationResponse(BaseModel):
+    run_id: int
+    per_label: Dict[str, Dict[str, Any]]
+
+
+class FullStatsResponse(BaseModel):
+    totalRecords: int
+    totalTerms: int
+    labelDistribution: Dict[str, int]

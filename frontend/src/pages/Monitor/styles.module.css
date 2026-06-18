@@ -1,32 +1,197 @@
-.monitor {
-  font-family: "Nunito Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
-}
-
 .monitor__title {
-  margin: 0 0 24px;
-  font-size: 28px;
+  font-size: 26px;
   font-weight: 700;
-  color: #1e3a5f;
+  color: var(--color-text);
+  margin-bottom: var(--space-3);
 }
 
-.monitor__placeholder {
+.monitor__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+/* ------------------ DATASET SELECTOR ------------------ */
+
+.monitor__dataset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ------------------ STATS ------------------ */
+
+.monitor__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+/* ------------------ TRAINING FORM ------------------ */
+
+.monitor__field {
+  margin-bottom: var(--space-3);
+}
+
+.monitor__label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.monitor__radio-group {
   display: flex;
   flex-direction: column;
+  gap: var(--space-1);
+}
+
+.monitor__radio {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 60px 40px;
-  background-color: #ffffff;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  text-align: center;
+  gap: var(--space-1);
+  cursor: pointer;
+  color: var(--color-text);
 }
 
-.monitor__placeholder p {
-  margin: 0 0 8px;
+.monitor__code {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+}
+
+.monitor__input {
+  width: 100%;
+  max-width: 480px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+.monitor__input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px rgba(20, 77, 112, 0.15);
+}
+
+.monitor__actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-3);
+}
+
+.monitor__status {
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.monitor__status--active {
+  color: var(--color-success);
+}
+
+/* ------------------ SELECT FALLBACK ------------------ */
+
+.monitor__select {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  min-width: 160px;
+  font-size: 14px;
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+
+/* ------------------ PROGRESS / CHARTS ------------------ */
+
+.monitor__progress {
+  margin-bottom: var(--space-3);
+}
+
+.monitor__empty {
+  color: var(--color-text-muted);
+}
+
+.monitor__run-info {
+  margin-top: var(--space-2);
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+/* ------------------ HEATMAP ------------------ */
+
+.monitor__heatmap {
+  overflow-x: auto;
+}
+
+.monitor__heatmap-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.monitor__heatmap-text {
+  fill: var(--color-text);
+}
+
+.monitor__heatmap-cell {
+  stroke: var(--color-surface);
+}
+
+.monitor__tooltip {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  padding: var(--space-2);
+  background: var(--color-text);
+  color: var(--color-surface);
+  border-radius: var(--radius-lg);
+  font-size: 13px;
+  box-shadow: var(--shadow-card);
+}
+
+/* ------------------ LABEL SELECTOR ------------------ */
+
+.label-selector {
+  margin-top: var(--space-3);
+}
+
+.label-selector__title {
   font-size: 16px;
-  color: #6b7280;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--space-2);
 }
 
-.monitor__placeholder p:last-child {
-  margin-bottom: 0;
+.label-selector__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.label-toggle {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 14px;
+  user-select: none;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.label-toggle--active {
+  background: var(--color-success);
+  color: var(--color-surface);
+  border-color: var(--color-success);
 }

@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Column, JSON
 from sqlmodel import SQLModel, Field, Relationship
@@ -74,8 +74,8 @@ class Dataset(SQLModel, table=True):
     name: str
     uploaded: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_modified: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    # TODO: need to specify a structure for the labels
     labels: List[str] = Field(sa_column=Column(JSON))
+    label_relations: List[dict] = Field(default_factory=list, sa_column=Column(JSON, nullable=True))
     date_label: Optional[str] = Field(default=None, nullable=True)
     status: ProcessingStatus = Field(default=ProcessingStatus.PROCESSING, index=True)
     error_message: Optional[str] = None
@@ -93,6 +93,22 @@ class Dataset(SQLModel, table=True):
     clusters: list["Cluster"] = Relationship(
         back_populates="dataset",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+    evaluations: list["Evaluation"] = Relationship(
+        back_populates="dataset",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+
+class ModelTrainRecordLink(SQLModel, table=True):
+    """Link table associating a trained Model with the Records used to train it."""
+
+    model_id: Optional[int] = Field(
+        default=None, foreign_key="model.id", primary_key=True
+    )
+    record_id: Optional[int] = Field(
+        default=None, foreign_key="record.id", primary_key=True
     )
 
 
@@ -124,9 +140,20 @@ class Record(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
 
+    # Relationship to SourceTermEx (one-to-many)
+    source_terms_ex: list["SourceTermEx"] = Relationship(
+        back_populates="record",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
     sentence_segments: list["SentenceSegment"] = Relationship(
         back_populates="record",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+    trained_models: list["Model"] = Relationship(
+        back_populates="train_records",
+        link_model=ModelTrainRecordLink,
     )
 
 
@@ -210,6 +237,128 @@ class SourceTerm(SQLModel, table=True):
     # Relationship to the Cluster this term belongs to
     cluster: Optional["Cluster"] = Relationship(back_populates="source_terms")
 
+class SourceTermEx(SQLModel, table=True):
+    """
+    Source term model representing an extracted term from a record.
+    """
+
+    __tablename__ = "source_term_ex"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    value: str
+    label: str
+    start_position: Optional[int] = Field(default=None)
+    end_position: Optional[int] = Field(default=None)
+    score: Optional[float] = Field(default=None)
+
+    # Relationship back to Record (many-to-one)
+    record_id: int = Field(foreign_key="record.id", ondelete="CASCADE", nullable=False)
+    record: Optional["Record"] = Relationship(back_populates="source_terms_ex")
+
+    # Relationship back to Model (many-to-one)
+    model_id: int = Field(foreign_key="model.id", ondelete="CASCADE", nullable=False)
+    model: Optional["Model"] = Relationship(back_populates="source_terms")
+
+class Model(SQLModel, table=True):
+
+    __tablename__ = "model"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    version: str
+    base_model: Optional[str] = Field(default=None)
+    path: Optional[str] = Field(default=None)
+    dataset_id: Optional[int] = Field(
+        default=None, foreign_key="dataset.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    # Relationship to SourceTermEx (one-to-many)
+    # SourceTermEx extracted with this model
+    source_terms: list["SourceTermEx"] = Relationship(
+        back_populates="model",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+    # Relationship to Records (many-to-many)
+    # Records used to train this model
+    train_records: list["Record"] = Relationship(
+        back_populates="trained_models",
+        link_model=ModelTrainRecordLink,
+    )
+
+    # Relationship to Evaluation (one-to-many)
+    evaluations: list["Evaluation"] = Relationship(
+        back_populates="model",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+
+    # One-to-one back to the training run that produced this model
+    training_run: Optional["TrainingRun"] = Relationship(back_populates="model")
+
+class Evaluation(SQLModel, table=True):
+
+    __tablename__ = "evaluation"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    label: str
+    score: Dict[str, Any] = Field(
+        sa_column=Column(JSON, nullable=False)
+    )
+
+    # Relationship to Dataset (one-to-many)
+    dataset_id: int = Field(
+        foreign_key="dataset.id", ondelete="CASCADE", nullable=False
+    )
+    dataset: Optional["Dataset"] = Relationship(back_populates="evaluations")
+
+    # Relationship to Model (one-to-many)
+    model_id: int = Field(
+        foreign_key="model.id", ondelete="CASCADE", nullable=False
+    )
+    model: Optional["Model"] = Relationship(back_populates="evaluations")
+
+
+class TrainingRun(SQLModel, table=True):
+    """A GLiNER training run and its lifecycle. Produces a Model on success."""
+
+    __tablename__ = "training_run"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    dataset_id: int = Field(
+        foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    base_model: str
+    labels: List[str] = Field(sa_column=Column(JSON))
+    val_ratio: float = Field(default=0.0)
+    status: str = Field(default="pending", index=True)  # pending|running|completed|failed|stopped
+    error_message: Optional[str] = Field(default=None)
+    model_id: Optional[int] = Field(
+        default=None, foreign_key="model.id", ondelete="SET NULL"
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    metrics: list["TrainingMetric"] = Relationship(
+        back_populates="run",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    model: Optional["Model"] = Relationship(back_populates="training_run")
+
+
+class TrainingMetric(SQLModel, table=True):
+    """Per-epoch training metric (loss curve)."""
+
+    __tablename__ = "training_metric"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    run_id: int = Field(
+        foreign_key="training_run.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    epoch: int
+    loss: Optional[float] = Field(default=None)
+
+    run: Optional["TrainingRun"] = Relationship(back_populates="metrics")
+
 
 class Cluster(SQLModel, table=True):
     """
@@ -282,7 +431,9 @@ class ExtractionJob(SQLModel, table=True):
     dataset_id: int = Field(
         foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
     )
-
+    model_id: int = Field(
+        foreign_key="model.id", nullable=False, index=True
+    )
     total: int = Field(default=0)
     completed: int = Field(default=0)
     status: str = Field(
@@ -293,6 +444,7 @@ class ExtractionJob(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+    currently_used: bool = Field(default=True) # samo en True
 
 class Vocabulary(SQLModel, table=True):
     """
@@ -351,6 +503,30 @@ class Concept(SQLModel, table=True):
         back_populates="concept",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
+
+
+class SourceTermLink(SQLModel, table=True):
+    """
+    Directed link between two source terms representing a 'has value' relationship.
+
+    E.g. a Diagnosis term linked to a Measurement term.
+    Both FKs cascade-delete so links are cleaned up when either term is removed.
+    """
+
+    __tablename__ = "source_term_link"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    from_term_id: int = Field(
+        foreign_key="source_term.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    to_term_id: int = Field(
+        foreign_key="source_term.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    dataset_id: int = Field(
+        foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class SourceToConceptMap(SQLModel, table=True):

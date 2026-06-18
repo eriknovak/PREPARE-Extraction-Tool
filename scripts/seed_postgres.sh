@@ -39,9 +39,9 @@ CREATE TEMP TABLE tmp_vocabulary (
   id             integer,
   name           varchar,
   uploaded       timestamp,
-  user_id        integer,
   status         processingstatus,
-  error_message  varchar
+  error_message  varchar,
+  user_id        integer
 );
 
 CREATE TEMP TABLE tmp_concept (
@@ -58,7 +58,7 @@ CREATE TEMP TABLE tmp_concept (
   vocabulary_id     integer
 );
 
-COPY tmp_vocabulary (id, name, uploaded, user_id, status, error_message)
+COPY tmp_vocabulary (id, name, uploaded, status, error_message, user_id)
 FROM '/tmp/vocabulary.csv' WITH CSV HEADER;
 
 COPY tmp_concept (
@@ -72,14 +72,14 @@ INSERT INTO "user" (username, hashed_password, disabled, created_at)
 VALUES ('seed_system', 'not-a-real-password', true, CURRENT_TIMESTAMP)
 ON CONFLICT (username) DO NOTHING;
 
-INSERT INTO vocabulary (id, name, uploaded, user_id, status, error_message)
+INSERT INTO vocabulary (id, name, uploaded, status, error_message, user_id)
 SELECT
   tv.id,
   tv.name,
-  tv.uploaded,
-  (SELECT id FROM "user" WHERE username = 'seed_system'),
+  CURRENT_TIMESTAMP,
   tv.status,
-  tv.error_message
+  tv.error_message,
+  (SELECT id FROM "user" WHERE username = 'seed_system')
 FROM tmp_vocabulary tv
 ON CONFLICT (id) DO NOTHING;
 
