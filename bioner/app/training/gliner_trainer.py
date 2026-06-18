@@ -751,13 +751,13 @@ class GLiNERFinetuner:
             self._status = "stopped"
             return
 
-        BASE_DIR = Path.cwd()
-        OUTPUT_ROOT = BASE_DIR / "models" / "gliner"
-
-        base_name = Path(self.base_model_path).name
+        # Persist trained models into the shared models library (mounted volume),
+        # one folder per run, so they survive container restarts and can be served
+        # by setting BIONER_MODEL to this path.
+        models_dir = Path(os.environ.get("BIONER_MODELS_DIR", "/models"))
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        output_dir = OUTPUT_ROOT / f"{base_name}-finetuned-{timestamp}"
+        output_dir = models_dir / f"run-{self.run_id}-{timestamp}"
         output_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"\nSAVING MODEL TO: {output_dir}\n")
