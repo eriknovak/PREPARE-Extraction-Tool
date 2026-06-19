@@ -175,3 +175,53 @@ class NERMetrics:
             fn += _fn
 
         return _compute_precision_recall_f1(tp, fp, fn)
+
+    def sentence_errors(
+        self,
+        true_ents: List[Entity],
+        pred_ents: List[Entity],
+        match_type: Literal["exact", "relaxed", "overlap"] = "relaxed",
+        label: Optional[str] = None,
+    ) -> Tuple[List[Entity], List[Entity]]:
+        """Return ``(false_positives, false_negatives)`` for one sentence.
+
+        Uses the same greedy matching as the aggregate scores, so the returned
+        counts line up with the precision/recall reported for ``label``. A false
+        positive is a predicted entity with no matching gold entity; a false
+        negative is a gold entity with no matching prediction.
+
+        Args:
+            true_ents (List[Entity]): Gold entities for one sentence.
+            pred_ents (List[Entity]): Predicted entities for one sentence.
+            match_type: Matching strictness (``exact``, ``relaxed`` or ``overlap``).
+            label (Optional[str]): Restrict to a single label, or all when None.
+
+        Returns:
+            Tuple[List[Entity], List[Entity]]: ``(false_positives, false_negatives)``.
+        """
+        if match_type == "exact":
+            match_fn = _entity_matches_exact
+        elif match_type == "relaxed":
+            match_fn = _entity_matches_relaxed
+        elif match_type == "overlap":
+            match_fn = _entity_matches_overlap
+        else:
+            raise ValueError(f"Unsupported match_type for errors: {match_type}")
+
+        filtered_true = [ent for ent in true_ents if label is None or ent.label == label]
+        filtered_pred = [ent for ent in pred_ents if label is None or ent.label == label]
+
+        matched_pred: set[int] = set()
+        matched_true: set[int] = set()
+        for ti, true_ent in enumerate(filtered_true):
+            for pi, pred_ent in enumerate(filtered_pred):
+                if pi in matched_pred:
+                    continue
+                if match_fn(true_ent, pred_ent):
+                    matched_pred.add(pi)
+                    matched_true.add(ti)
+                    break
+
+        false_positives = [p for pi, p in enumerate(filtered_pred) if pi not in matched_pred]
+        false_negatives = [t for ti, t in enumerate(filtered_true) if ti not in matched_true]
+        return false_positives, false_negatives

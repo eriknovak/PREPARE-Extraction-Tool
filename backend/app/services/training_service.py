@@ -1,7 +1,7 @@
 """Training run lifecycle: create, progress, evaluate, complete/fail/stop."""
 
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
@@ -164,15 +164,21 @@ def _ensure_model(db: Session, run: TrainingRun) -> Model:
 
 
 def record_evaluation(
-    db: Session, run_id: int, per_label: Dict[str, Dict[str, float]]
+    db: Session, run_id: int, per_label: Dict[str, Dict[str, Any]]
 ) -> None:
     """Store final per-label evaluation against the run's Model.
+
+    The per-label mapping is persisted verbatim as flexible JSON, so any
+    error-analysis fields the trainer attaches (``fp``/``fn`` counts and a
+    bounded ``examples`` list) are captured alongside the F1/precision/recall
+    scores without a schema change.
 
     Args:
         db (Session): Active DB session.
         run_id (int): ID of the TrainingRun whose model to evaluate.
-        per_label (Dict[str, Dict[str, float]]): Label -> metric mapping
-            (e.g. {"Drug": {"exact_f1": 0.8, "relaxed_f1": 0.9}}).
+        per_label (Dict[str, Dict[str, Any]]): Label -> metric mapping
+            (e.g. {"Drug": {"exact_f1": 0.8, "relaxed_f1": 0.9, "fp": 3,
+            "fn": 1, "examples": [...]}}).
     """
     run = db.get(TrainingRun, run_id)
     if run is None:
