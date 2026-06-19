@@ -108,8 +108,13 @@ export function useAuthProvider(): AuthContextType {
   );
 
   const logout = useCallback(async () => {
-    await apiLogout();
-    setUser(null);
+    try {
+      await apiLogout();
+    } finally {
+      // Always tear down client-side auth state, even if the server logout call
+      // fails — otherwise a thrown error would leave the UI "logged in".
+      setUser(null);
+    }
   }, []);
 
   return {

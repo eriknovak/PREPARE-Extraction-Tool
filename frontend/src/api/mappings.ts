@@ -104,7 +104,7 @@ export async function exportMappings(datasetId: number, statusFilter?: string): 
 
   // Get filename from Content-Disposition header or use default
   const contentDisposition = response.headers.get("Content-Disposition");
-  const filenameMatch = contentDisposition?.match(/filename=(.+)/);
+  const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
   const filename = filenameMatch ? filenameMatch[1] : `mappings_${datasetId}.zip`;
 
   // Create blob and trigger download

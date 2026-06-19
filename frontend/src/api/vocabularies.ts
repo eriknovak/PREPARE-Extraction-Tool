@@ -108,7 +108,7 @@ export async function downloadVocabulary(id: number): Promise<void> {
 
   // Get filename from Content-Disposition header or use default
   const contentDisposition = response.headers.get("Content-Disposition");
-  const filenameMatch = contentDisposition?.match(/filename=(.+)/);
+  const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
   const filename = filenameMatch ? filenameMatch[1] : `vocabulary_${id}.csv`;
 
   // Create blob and trigger download
