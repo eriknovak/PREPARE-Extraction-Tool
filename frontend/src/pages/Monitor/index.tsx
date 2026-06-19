@@ -180,11 +180,20 @@ const Monitor = () => {
 
   useEffect(() => {
     if (!selectedDatasetId || !token) return;
+    let closed = false;
     const ws = new WebSocket(getTrainingWSUrl(token));
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      if (closed) return;
+
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch (e) {
+        console.error("Failed to parse training WS message:", e);
+        return;
+      }
 
       switch (data.type) {
         case "training_start":
@@ -241,7 +250,10 @@ const Monitor = () => {
       }
     };
 
-    return () => ws.close();
+    return () => {
+      closed = true;
+      ws.close();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDatasetId, token]);
 
