@@ -6,43 +6,11 @@
   gap: var(--space-4);
 }
 
-.header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-bottom: var(--space-1);
-}
-
-.header__title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-primary-dark);
-}
-
-.header__subtitle {
-  margin: 0;
-  font-size: 14px;
-  color: var(--color-text-muted);
-}
-
-.muted {
-  color: var(--color-text-muted);
-}
-
 /* Two charts side-by-side on wide screens, stacked when narrow. */
 .charts-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
   gap: var(--space-4);
-}
-
-/* ------------------ DATASET SELECTOR ------------------ */
-
-.dataset-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
 }
 
 /* ------------------ STATS ------------------ */
