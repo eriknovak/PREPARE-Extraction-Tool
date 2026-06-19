@@ -28,13 +28,17 @@ from app.models_db import (
 )
 from app.routes.v1.auth import get_current_user
 from app.schemas import (
+    ActiveModelResponse,
     ExtractionJobStartResponse,
     ExtractionJobStatusResponse,
     FullStatsRequest,
     FullStatsResponse,
     GLiNERTrainingRequest,
     MessageOutput,
+    ModelSummary,
+    ModelsOutput,
     RunEvaluationResponse,
+    SetActiveModelRequest,
     TrainingMetricPoint,
     TrainingRunsOutput,
     TrainingRunSummary,
@@ -112,20 +116,9 @@ def extract_entities_from_record(
             message=f"Record {record_id} is reviewed; extraction skipped"
         )
 
-    # Resolve the model up front so it can be used in the already-extracted check below.
-    try:
-        model_info_response = requests.get(
-            f"{settings.EXTRACT_HOST}/model/info", timeout=30
-        )
-        model_info_response.raise_for_status()
-        model_metadata = model_info_response.json()["model"]
-        model_db = get_or_create_model(model_metadata, db)
-        model_id = model_db.id
-    except requests.RequestException:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Extraction service unavailable",
-        )
+    # Activate the dataset's selected model (or default) and resolve its Model id
+    # up front so it can be used in the already-extracted check below.
+    model_id = resolve_active_model(dataset, db)
 
     already_extracted_terms = db.exec(
         select(SourceTermEx)
@@ -337,21 +330,9 @@ def extract_entities_from_records(
     # TODO
     records_to_process = [r for r in records if not r.reviewed]
 
-    try:
-        model_info_response = requests.get(
-            f"{settings.EXTRACT_HOST}/model/info", timeout=30
-        )
-        model_info_response.raise_for_status()
-        model_metadata = model_info_response.json()["model"]
-        model_db = get_or_create_model(model_metadata, db)
-        model_id = model_db.id
-        
-    except requests.RequestException:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Extraction service unavailable",
-        )
-    
+    # Activate the dataset's selected model (or default) and resolve its Model id.
+    model_id = resolve_active_model(dataset, db)
+
     # check if a job for this dataset and model already exists and is currently "used"
     existing_job = db.exec(
         select(ExtractionJob)
@@ -716,6 +697,169 @@ def get_or_create_model(metadata: dict, db: Session):
 
     return new_model
 
+
+def _model_summary(db: Session, model: Model) -> ModelSummary:
+    """Build a ModelSummary, including the model's overall macro-F1 if evaluated."""
+    per_label = evaluation_service.get_per_label(db, model.id)
+    score = evaluation_service.compute_macro_f1(per_label)
+    return ModelSummary(
+        id=model.id,
+        name=model.name,
+        version=model.version,
+        base_model=model.base_model,
+        path=model.path,
+        dataset_id=model.dataset_id,
+        created_at=model.created_at,
+        score=score,
+    )
+
+
+def resolve_active_model(dataset: Dataset, db: Session) -> int:
+    """Activate the dataset's selected NER model on bioner and return the Model id
+    to record extracted terms under.
+
+    When the dataset has a selected model with an artifact path, bioner is asked
+    to activate it and that Model's id is returned. Otherwise bioner is reverted
+    to its default model and the default's Model row (looked up / created from
+    ``/model/info``) is used — preserving the original default behaviour. Raises
+    503 if bioner is unreachable.
+    """
+    model_db = None
+    if dataset.active_model_id is not None:
+        candidate = db.get(Model, dataset.active_model_id)
+        if candidate is not None and candidate.path:
+            model_db = candidate
+
+    try:
+        if model_db is not None:
+            resp = requests.post(
+                f"{settings.EXTRACT_HOST}/model/activate",
+                json={"model": model_db.path},
+                timeout=300,
+            )
+            resp.raise_for_status()
+            return model_db.id
+
+        # Default model: revert bioner and record under the default's metadata.
+        resp = requests.post(
+            f"{settings.EXTRACT_HOST}/model/activate",
+            json={"model": None},
+            timeout=300,
+        )
+        resp.raise_for_status()
+        info = requests.get(f"{settings.EXTRACT_HOST}/model/info", timeout=30)
+        info.raise_for_status()
+        metadata = info.json()["model"]
+    except requests.RequestException:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extraction service unavailable",
+        )
+    return get_or_create_model(metadata, db).id
+
+
+# ================================================
+# NER model selection routes
+# ================================================
+
+
+@router.get("/models", response_model=ModelsOutput)
+def list_models(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """List the caller's trained models (those with an artifact path) for selection."""
+    models = db.exec(
+        select(Model)
+        .join(Dataset, Dataset.id == Model.dataset_id)
+        .where(Dataset.user_id == current_user.id)
+        .where(Model.path.is_not(None))
+        .order_by(Model.created_at.desc())
+    ).all()
+    return ModelsOutput(models=[_model_summary(db, m) for m in models])
+
+
+@router.get(
+    "/datasets/{dataset_id}/active-model", response_model=ActiveModelResponse
+)
+def get_dataset_active_model(
+    dataset_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Return the model the dataset uses for extraction (null = bioner default)."""
+    dataset = db.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+        )
+    if dataset.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this dataset",
+        )
+    active = None
+    if dataset.active_model_id is not None:
+        model = db.get(Model, dataset.active_model_id)
+        if model is not None:
+            active = _model_summary(db, model)
+    return ActiveModelResponse(dataset_id=dataset_id, active_model=active)
+
+
+@router.post(
+    "/datasets/{dataset_id}/active-model", response_model=ActiveModelResponse
+)
+def set_dataset_active_model(
+    dataset_id: int,
+    payload: SetActiveModelRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Set (``model_id``) or clear (``null``) the dataset's active extraction model."""
+    dataset = db.get(Dataset, dataset_id)
+    if dataset is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+        )
+    if dataset.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this dataset",
+        )
+
+    if payload.model_id is None:
+        dataset.active_model_id = None
+        db.add(dataset)
+        db.commit()
+        return ActiveModelResponse(dataset_id=dataset_id, active_model=None)
+
+    model = db.get(Model, payload.model_id)
+    if model is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
+        )
+    if model.path is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Model has no trained artifact to use for extraction",
+        )
+    # Authorize via the model's owning dataset.
+    if model.dataset_id is not None:
+        owner = db.get(Dataset, model.dataset_id)
+        if owner is not None and owner.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to use this model",
+            )
+
+    dataset.active_model_id = model.id
+    db.add(dataset)
+    db.commit()
+    return ActiveModelResponse(
+        dataset_id=dataset_id, active_model=_model_summary(db, model)
+    )
+
+
 # ================================================
 # NER monitoring helper functions
 # ================================================
@@ -920,6 +1064,7 @@ def _run_summary(db: Session, run: TrainingRun) -> TrainingRunSummary:
         created_at=run.created_at,
         error_message=run.error_message,
         path=path,
+        model_id=run.model_id,
         score=score,
         preferred=run.preferred,
     )

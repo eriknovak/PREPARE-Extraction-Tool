@@ -257,6 +257,84 @@ def test_rename_and_prefer_run(client):
     assert body["preferred"] is True
 
 
+def _make_trained_model(client, *, path="/models/run-x", dataset_id=None):
+    """Persist a Model with an artifact path (a selectable trained model)."""
+    from app.models_db import Model
+
+    db = client.session
+    model = Model(
+        name="trained",
+        version="1",
+        base_model="b",
+        path=path,
+        dataset_id=dataset_id if dataset_id is not None else client.dataset_id,
+    )
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+    return model
+
+
+def test_list_models_returns_trained(client):
+    model = _make_trained_model(client)
+    resp = client.get("/api/v1/bioner/models")
+    assert resp.status_code == 200
+    ids = [m["id"] for m in resp.json()["models"]]
+    assert model.id in ids
+
+
+def test_get_active_model_defaults_to_none(client):
+    resp = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/active-model")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dataset_id"] == client.dataset_id
+    assert body["active_model"] is None
+
+
+def test_set_and_clear_active_model(client):
+    model = _make_trained_model(client)
+    # Set
+    resp = client.post(
+        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        json={"model_id": model.id},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["active_model"]["id"] == model.id
+    # Reflected by GET
+    got = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/active-model")
+    assert got.json()["active_model"]["id"] == model.id
+    # Clear (null = default)
+    cleared = client.post(
+        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        json={"model_id": None},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["active_model"] is None
+
+
+def test_set_active_model_rejects_model_without_path(client):
+    from app.models_db import Model
+
+    db = client.session
+    model = Model(name="m", version="1", dataset_id=client.dataset_id)
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+    resp = client.post(
+        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        json={"model_id": model.id},
+    )
+    assert resp.status_code == 400
+
+
+def test_set_active_model_rejects_missing_model(client):
+    resp = client.post(
+        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        json={"model_id": 999999},
+    )
+    assert resp.status_code == 404
+
+
 def test_delete_run(client):
     from app.services import training_service
 

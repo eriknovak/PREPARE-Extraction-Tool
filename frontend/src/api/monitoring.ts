@@ -1,8 +1,11 @@
 import { apiRequest } from "./client";
 import type {
+  ActiveModelResponse,
   DatasetsOutput,
   EvaluationResponse,
   MessageOutput,
+  ModelsOutput,
+  ModelSummary,
   MonitorDatasetStats,
   MonitorRun,
   RunsOutput,
@@ -74,6 +77,27 @@ export function getAllEvaluations(datasetId: number) {
 /** Per-epoch loss curve for a single run, ordered by epoch. */
 export function getRunMetrics(runId: number) {
   return apiRequest<TrainingMetric[]>(`/bioner/runs/${runId}/metrics`);
+}
+
+/* ---------------- MODELS ---------------- */
+
+/** List trained models the user can select for NER extraction. */
+export async function getModels(): Promise<ModelSummary[]> {
+  const res = await apiRequest<ModelsOutput>("/bioner/models");
+  return res.models;
+}
+
+/** The model a dataset currently uses for extraction (null active_model = default). */
+export function getDatasetActiveModel(datasetId: number) {
+  return apiRequest<ActiveModelResponse>(`/bioner/datasets/${datasetId}/active-model`);
+}
+
+/** Set (modelId) or clear (null = default) the dataset's active extraction model. */
+export function setDatasetActiveModel(datasetId: number, modelId: number | null) {
+  return apiRequest<ActiveModelResponse>(`/bioner/datasets/${datasetId}/active-model`, {
+    method: "POST",
+    body: JSON.stringify({ model_id: modelId }),
+  });
 }
 
 /* ---------------- TRAINING ---------------- */

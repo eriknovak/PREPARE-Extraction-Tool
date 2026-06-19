@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import Query
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.models_db import Record, Concept, SourceTerm, Cluster, ProcessingStatus
 
 
@@ -739,6 +739,8 @@ class TrainingStartResponse(BaseModel):
 class TrainingRunSummary(BaseModel):
     """A training run with the metadata needed to compare/manage runs."""
 
+    model_config = ConfigDict(protected_namespaces=())
+
     run_id: int
     status: str
     name: Optional[str] = None
@@ -749,6 +751,8 @@ class TrainingRunSummary(BaseModel):
     error_message: Optional[str] = None
     # Path to the trained model artifact (from the linked Model), if any.
     path: Optional[str] = None
+    # Id of the linked trained Model, used to select it for extraction (if any).
+    model_id: Optional[int] = None
     # Overall macro-F1 across labels, computed from the run's evaluation (if available).
     score: Optional[float] = None
     preferred: bool = False
@@ -788,3 +792,43 @@ class FullStatsResponse(BaseModel):
     totalRecords: int
     totalTerms: int
     labelDistribution: Dict[str, int]
+
+
+# ================================================
+# NER model selection schemas
+# ================================================
+
+
+class ModelSummary(BaseModel):
+    """A trained NER model that can be selected for extraction."""
+
+    id: int
+    name: str
+    version: str
+    base_model: Optional[str] = None
+    path: Optional[str] = None
+    dataset_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    # Overall macro-F1 across labels, if the model has been evaluated.
+    score: Optional[float] = None
+
+
+class ModelsOutput(BaseModel):
+    """List of trained models available for selection."""
+
+    models: List[ModelSummary]
+
+
+class ActiveModelResponse(BaseModel):
+    """The model a dataset uses for extraction (null = bioner default)."""
+
+    dataset_id: int
+    active_model: Optional[ModelSummary] = None
+
+
+class SetActiveModelRequest(BaseModel):
+    """Set (``model_id``) or clear (``null``) a dataset's active extraction model."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: Optional[int] = None

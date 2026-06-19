@@ -6,6 +6,7 @@ import { faCheck } from "@fortawesome/free-solid-svg-icons";
 
 import Layout from "@components/Layout";
 import Button from "@components/Button";
+import Select from "@components/Select";
 import StatCard from "@components/StatCard";
 import ConfirmDialog from "@components/ConfirmDialog";
 import { ToastContainer } from "@components/Toast/ToastContainer";
@@ -16,11 +17,12 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { useToast } from "@/hooks/useToast";
 import { getLabelColorClass } from "@/utils/labelColors";
 import { downloadDataset as downloadDatasetAPI } from "@/api";
+import { getDatasetActiveModel, getModels, setDatasetActiveModel } from "@api/monitoring";
 import HighlightedText from "./HighlightedText";
 import RecordItem from "./RecordItem";
 import AnnotationSidebar from "./AnnotationSidebar";
 
-import type { SourceTermCreate } from "@/types";
+import type { ModelSummary, SourceTermCreate } from "@/types";
 
 import styles from "./styles.module.css";
 
@@ -49,6 +51,10 @@ const DatasetTermExtraction: React.FC = () => {
   }>({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
   const parsedDatasetId = datasetId ? parseInt(datasetId, 10) : 0;
+
+  // Extraction model selection: trained models for this dataset + the active one.
+  const [models, setModels] = useState<ModelSummary[]>([]);
+  const [activeModelId, setActiveModelId] = useState<number | null>(null);
 
   const {
     dataset,
@@ -145,6 +151,52 @@ const DatasetTermExtraction: React.FC = () => {
       selectRecord(records[0]);
     }
   }, [records, selectedRecord, selectRecord]);
+
+  // Load the dataset's trained models + currently-active extraction model.
+  useEffect(() => {
+    if (!parsedDatasetId) return;
+    let cancelled = false;
+    Promise.all([getModels(), getDatasetActiveModel(parsedDatasetId)])
+      .then(([allModels, active]) => {
+        if (cancelled) return;
+        setModels(allModels);
+        setActiveModelId(active.active_model?.id ?? null);
+      })
+      .catch(() => {
+        /* model selection is optional; ignore load failures */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [parsedDatasetId]);
+
+  // Only models trained for this dataset are offered, plus the default.
+  const modelOptions = useMemo(() => {
+    const datasetModels = models.filter((m) => m.dataset_id === parsedDatasetId);
+    return [
+      { value: "default", label: "Default model" },
+      ...datasetModels.map((m) => ({
+        value: String(m.id),
+        label: m.score != null ? `${m.name} (${(m.score * 100).toFixed(1)}%)` : m.name,
+      })),
+    ];
+  }, [models, parsedDatasetId]);
+
+  const hasTrainedModels = modelOptions.length > 1;
+
+  const handleSelectModel = useCallback(
+    async (value: string) => {
+      const nextId = value === "default" ? null : Number(value);
+      try {
+        const res = await setDatasetActiveModel(parsedDatasetId, nextId);
+        setActiveModelId(res.active_model?.id ?? null);
+        toast.success(nextId === null ? "Using default extraction model" : "Extraction model updated");
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to set extraction model");
+      }
+    },
+    [parsedDatasetId, toast]
+  );
 
   const handleMarkReviewed = useCallback(async () => {
     if (!selectedRecord) return;
@@ -438,6 +490,19 @@ const DatasetTermExtraction: React.FC = () => {
               </div>
             ) : (
               <>
+                {hasTrainedModels && (
+                  <div className={styles["stats-section__model"]}>
+                    <label className={styles["stats-section__model-label"]}>Extraction model</label>
+                    <Select
+                      value={activeModelId != null ? String(activeModelId) : "default"}
+                      onValueChange={handleSelectModel}
+                      fullWidth={false}
+                      size="small"
+                      options={modelOptions}
+                      aria-label="Extraction model"
+                    />
+                  </div>
+                )}
                 <Button
                   variant="outline"
                   onClick={handleTermDownload}
