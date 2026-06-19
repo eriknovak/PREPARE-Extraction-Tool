@@ -6,6 +6,10 @@ from app.training.gliner_trainer import GLiNERFinetuner
 
 logger = logging.getLogger(__name__)
 
+# Statuses that mean a job has finished and no longer holds the GPU slot.
+# Anything NOT in this set (idle/pending/running) is treated as active.
+_TERMINAL_STATUSES = ("completed", "failed", "stopped")
+
 
 class TrainingJobManager:
     """Singleton managing GLiNER fine-tuning jobs. One active job at a time."""
@@ -36,10 +40,15 @@ class TrainingJobManager:
     ) -> bool:
 
         with self._jobs_lock:
-            active = [j for j in self._jobs.values() if j._status == "running"]
+            # Treat any non-terminal job (idle/pending/running) as active so a
+            # racing caller can't slip in before the worker thread flips status.
+            active = [
+                j for j in self._jobs.values()
+                if j._status not in _TERMINAL_STATUSES
+            ]
             if active:
                 logger.warning(
-                    f"Training job {run_id} rejected — job {active[0].run_id} already running"
+                    f"Training job {run_id} rejected — job {active[0].run_id} already active"
                 )
                 return False
 
@@ -54,6 +63,10 @@ class TrainingJobManager:
                 val_ratio=val_ratio if use_train_eval_split else 0.0,
             )
 
+            # Reserve the slot BEFORE releasing the lock: mark as running now so a
+            # concurrent start_job sees this job as active. The worker thread sets
+            # it to "running" again under _status_lock, which is harmless.
+            finetuner._status = "running"
             self._jobs[run_id] = finetuner
 
             def _run():
@@ -86,7 +99,7 @@ class TrainingJobManager:
         with self._jobs_lock:
             job = self._jobs.get(run_id)
 
-        if not job or job._status != "running":
+        if not job or job._status in _TERMINAL_STATUSES:
             return False
 
         job.request_stop()
@@ -104,7 +117,7 @@ class TrainingJobManager:
             done = [
                 (rid, j)
                 for rid, j in self._jobs.items()
-                if j._status in ("completed", "failed", "stopped")
+                if j._status in _TERMINAL_STATUSES
             ]
 
             for rid, _ in done[:-keep_last]:
