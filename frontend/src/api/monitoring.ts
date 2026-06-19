@@ -150,5 +150,12 @@ export function getTrainingWSUrl(token: string) {
     const proto = window.location.protocol === "https:" ? "wss" : "ws";
     base = `${proto}://${window.location.host}`;
   }
-  return `${base}/api/v1/bioner/ws/training?token=${token}`;
+  // NOTE: The access token is passed via the URL query string because the
+  // browser WebSocket API cannot set custom request headers. The backend reads
+  // `token` from the query. This is a known limitation: tokens in URLs can leak
+  // into server/proxy access logs and browser history. encodeURIComponent keeps
+  // the value safely encoded; a more robust approach would be a short-lived
+  // one-time ticket or a subprotocol-based handshake instead of a long-lived
+  // token in the URL.
+  return `${base}/api/v1/bioner/ws/training?token=${encodeURIComponent(token)}`;
 }
