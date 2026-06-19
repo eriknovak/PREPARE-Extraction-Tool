@@ -106,6 +106,21 @@ def extract_entities_from_record(
             message=f"Record {record_id} is reviewed; extraction skipped"
         )
 
+    # Resolve the model up front so it can be used in the already-extracted check below.
+    try:
+        model_info_response = requests.get(
+            f"{settings.EXTRACT_HOST}/model/info", timeout=30
+        )
+        model_info_response.raise_for_status()
+        model_metadata = model_info_response.json()["model"]
+        model_db = get_or_create_model(model_metadata, db)
+        model_id = model_db.id
+    except requests.RequestException:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extraction service unavailable",
+        )
+
     already_extracted_terms = db.exec(
         select(SourceTermEx)
         .where(SourceTermEx.record_id == record_id)
@@ -190,14 +205,6 @@ def extract_entities_from_record(
     request_data = {"medical_text": record.text, "labels": labels.labels}
 
     try:
-        model_info_response = requests.get(
-            f"{settings.EXTRACT_HOST}/model/info", timeout=30
-        )
-        model_info_response.raise_for_status()
-        model_metadata = model_info_response.json()["model"]
-        model_db = get_or_create_model(model_metadata, db)
-        model_id = model_db.id
-
         response = requests.post(
             f"{settings.EXTRACT_HOST}/ner", json=request_data, timeout=300
         )
@@ -370,10 +377,12 @@ def extract_entities_from_records(
     currently_used_job = db.exec(
         select(ExtractionJob)
         .where(ExtractionJob.currently_used == True)
+        .order_by(ExtractionJob.created_at.desc())
     ).first()
-    currently_used_job.currently_used = False
-    db.add(currently_used_job)
-    db.commit()
+    if currently_used_job is not None:
+        currently_used_job.currently_used = False
+        db.add(currently_used_job)
+        db.commit()
 
     total = len(records_to_process)
     job = ExtractionJob(
