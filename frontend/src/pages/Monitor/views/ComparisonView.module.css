@@ -35,6 +35,10 @@
   color: var(--color-primary, #2563eb);
 }
 
+.activeIcon {
+  color: var(--color-success, #16a34a);
+}
+
 .rowActions {
   display: inline-flex;
   align-items: center;

@@ -85,6 +85,18 @@
   gap: 8px;
 }
 
+.stats-section__model {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-right: 8px;
+}
+
+.stats-section__model-label {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
 /* Extraction Progress (inline with stats) */
 .stats-section__extraction {
   display: flex;

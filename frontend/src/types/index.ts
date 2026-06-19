@@ -479,10 +479,36 @@ export interface MonitorRun {
   error_message?: string | null;
   /** Path to the trained model artifact, if any. */
   path?: string | null;
+  /** Id of the linked trained model, used to select it for extraction (if any). */
+  model_id?: number | null;
   /** Overall macro-F1 across labels, if evaluation is available. */
   score?: number | null;
   /** Whether this run is the dataset's designated preferred/best run. */
   preferred?: boolean;
+}
+
+/** A trained NER model available for selection in extraction. */
+export interface ModelSummary {
+  id: number;
+  name: string;
+  version: string;
+  base_model?: string | null;
+  path?: string | null;
+  dataset_id?: number | null;
+  created_at?: string | null;
+  /** Overall macro-F1 across labels, if the model has been evaluated. */
+  score?: number | null;
+}
+
+/** List of trained models available for selection. */
+export interface ModelsOutput {
+  models: ModelSummary[];
+}
+
+/** The model a dataset uses for extraction (null = bioner default). */
+export interface ActiveModelResponse {
+  dataset_id: number;
+  active_model?: ModelSummary | null;
 }
 
 /** Paginated list of training runs for a dataset. */

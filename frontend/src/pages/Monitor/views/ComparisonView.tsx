@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faPen, faStar, faTrash, faTrophy } from "@fortawesome/free-solid-svg-icons";
+import { faCircleCheck, faPen, faStar, faTrash, faTrophy } from "@fortawesome/free-solid-svg-icons";
 
-import { deleteRun, getDatasetRunsPaged, getRunMetrics, updateRun } from "@api/monitoring";
+import {
+  deleteRun,
+  getDatasetActiveModel,
+  getDatasetRunsPaged,
+  getRunMetrics,
+  setDatasetActiveModel,
+  updateRun,
+} from "@api/monitoring";
 import Button from "@components/Button";
 import Card from "@components/Card";
 import ConfirmDialog from "@components/ConfirmDialog";
@@ -132,6 +139,9 @@ const ComparisonView = () => {
   const [allLosses, setAllLosses] = useState<RunLoss[]>([]);
   const [allLossesLoading, setAllLossesLoading] = useState(false);
 
+  // The model id currently selected for extraction on this dataset (null = default).
+  const [activeModelId, setActiveModelId] = useState<number | null>(null);
+
   // Historical loss for the single run picked in the detail section.
   const [runLoss, setRunLoss] = useState<TrainingMetric[]>([]);
   const [runLossLoading, setRunLossLoading] = useState(false);
@@ -164,6 +174,25 @@ const ComparisonView = () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDatasetId]);
+
+  // Fetch the dataset's active extraction model whenever the dataset changes.
+  useEffect(() => {
+    if (!selectedDatasetId) {
+      setActiveModelId(null);
+      return;
+    }
+    let cancelled = false;
+    getDatasetActiveModel(selectedDatasetId)
+      .then((res) => {
+        if (!cancelled) setActiveModelId(res.active_model?.id ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setActiveModelId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedDatasetId]);
 
   const loadMore = useCallback(() => {
@@ -342,6 +371,25 @@ const ComparisonView = () => {
     [toast]
   );
 
+  const handleUseForExtraction = useCallback(
+    async (run: MonitorRun) => {
+      if (!selectedDatasetId || run.model_id == null) return;
+      const isActive = activeModelId === run.model_id;
+      const nextId = isActive ? null : run.model_id;
+      try {
+        const res = await setDatasetActiveModel(selectedDatasetId, nextId);
+        setActiveModelId(res.active_model?.id ?? null);
+        toast.showToast(
+          nextId === null ? "Reverted to default extraction model" : "Model set for extraction",
+          "success"
+        );
+      } catch {
+        toast.showToast("Failed to update extraction model", "error");
+      }
+    },
+    [selectedDatasetId, activeModelId, toast]
+  );
+
   const handleRename = useCallback(
     async (name?: string) => {
       const target = renameTarget;
@@ -396,6 +444,13 @@ const ComparisonView = () => {
             {run.preferred && (
               <FontAwesomeIcon icon={faStar} className={styles.preferredIcon} title="Preferred run" />
             )}
+            {run.model_id != null && activeModelId === run.model_id && (
+              <FontAwesomeIcon
+                icon={faCircleCheck}
+                className={styles.activeIcon}
+                title="Active for extraction"
+              />
+            )}
             {runDisplayName(run)}
           </span>
         ),
@@ -425,6 +480,23 @@ const ComparisonView = () => {
         align: "right",
         render: (run) => (
           <div className={styles.rowActions}>
+            <Button
+              size="icon"
+              variant="ghost"
+              colorScheme={run.model_id != null && activeModelId === run.model_id ? "primary" : "default"}
+              title={
+                run.model_id == null
+                  ? "No trained model for this run"
+                  : activeModelId === run.model_id
+                    ? "Active for extraction (click to use default)"
+                    : "Use this model for extraction"
+              }
+              aria-label="Use model for extraction"
+              disabled={run.model_id == null}
+              onClick={() => handleUseForExtraction(run)}
+            >
+              <FontAwesomeIcon icon={faCircleCheck} />
+            </Button>
             <Button
               size="icon"
               variant="ghost"
@@ -458,7 +530,7 @@ const ComparisonView = () => {
         ),
       },
     ],
-    [bestRunId, handleTogglePreferred]
+    [bestRunId, handleTogglePreferred, handleUseForExtraction, activeModelId]
   );
 
   if (!selectedDatasetId) {

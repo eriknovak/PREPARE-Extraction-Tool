@@ -80,6 +80,11 @@ class Dataset(SQLModel, table=True):
     status: ProcessingStatus = Field(default=ProcessingStatus.PROCESSING, index=True)
     error_message: Optional[str] = None
 
+    # Trained model selected for NER extraction on this dataset (null = bioner default).
+    active_model_id: Optional[int] = Field(
+        default=None, foreign_key="model.id", ondelete="SET NULL", nullable=True
+    )
+
     # Relationship to User (owner)
     user_id: int = Field(foreign_key="user.id", ondelete="CASCADE", nullable=False)
     user: Optional["User"] = Relationship(back_populates="datasets")
