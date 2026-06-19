@@ -7,6 +7,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     HTTPException,
+    Query,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -34,8 +35,11 @@ from app.schemas import (
     MessageOutput,
     RunEvaluationResponse,
     TrainingMetricPoint,
+    TrainingRunsOutput,
     TrainingRunSummary,
+    TrainingRunUpdate,
     TrainingStartResponse,
+    create_pagination_metadata,
 )
 from app.services import (
     bioner_client,
@@ -196,7 +200,7 @@ def extract_entities_from_record(
     auto_terms = db.exec(
         select(SourceTerm)
         .where(SourceTerm.record_id == record_id)
-        .where(SourceTerm.automatically_extracted == True)
+        .where(SourceTerm.automatically_extracted == True)  # noqa: E712
     ).all()
 
     for term in auto_terms:
@@ -353,7 +357,7 @@ def extract_entities_from_records(
         .where(
             ExtractionJob.dataset_id == dataset_id,
             ExtractionJob.model_id == model_id,
-            ExtractionJob.currently_used == True
+            ExtractionJob.currently_used == True  # noqa: E712
         )
         .order_by(ExtractionJob.created_at.desc())
     ).first()
@@ -367,7 +371,7 @@ def extract_entities_from_records(
             source_terms_to_delete = db.exec(
                 select(SourceTerm)
                 .where(SourceTerm.record_id.in_(unreviewed_record_ids))
-                .where(SourceTerm.automatically_extracted == True)
+                .where(SourceTerm.automatically_extracted == True)  # noqa: E712
             ).all()
             for st in source_terms_to_delete:
                 db.delete(st)
@@ -377,7 +381,7 @@ def extract_entities_from_records(
     # set current job to False, to set new job to True
     currently_used_job = db.exec(
         select(ExtractionJob)
-        .where(ExtractionJob.currently_used == True)
+        .where(ExtractionJob.currently_used == True)  # noqa: E712
         .order_by(ExtractionJob.created_at.desc())
     ).first()
     if currently_used_job is not None:
@@ -745,8 +749,8 @@ def evaluate(model_id: int, dataset_id: int):
         ]
 
         for record in records_to_evaluate:
-            gold_terms = record.source_terms
-            predicted_terms = [
+            gold_terms = record.source_terms  # noqa: F841
+            predicted_terms = [  # noqa: F841
                 ex for ex in record.source_terms_ex
                 if ex.model_id == model_id
             ]
@@ -765,6 +769,15 @@ def start_training(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
+    # Reject a second concurrent run for the same dataset.
+    if req.dataset_id is not None and training_service.has_active_run(
+        db, req.dataset_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A training run is already active for this dataset",
+        )
+
     run = training_service.create_run(
         db,
         dataset_id=req.dataset_id,
@@ -830,18 +843,100 @@ def full_stats(
     )
 
 
-@router.get("/datasets/{dataset_id}/runs", response_model=List[TrainingRunSummary])
+def _run_summary(db: Session, run: TrainingRun) -> TrainingRunSummary:
+    """Build an enriched run summary, including artifact path and macro-F1 score."""
+    path = None
+    score = None
+    if run.model_id is not None:
+        model = db.get(Model, run.model_id)
+        if model is not None:
+            path = model.path
+        per_label = evaluation_service.get_per_label(db, run.model_id)
+        score = evaluation_service.compute_macro_f1(per_label)
+    return TrainingRunSummary(
+        run_id=run.id,
+        status=run.status,
+        name=run.name,
+        base_model=run.base_model,
+        labels=run.labels or [],
+        val_ratio=run.val_ratio,
+        created_at=run.created_at,
+        error_message=run.error_message,
+        path=path,
+        score=score,
+        preferred=run.preferred,
+    )
+
+
+def _get_owned_run(db: Session, run_id: int, current_user: User) -> TrainingRun:
+    """Fetch a run and verify the caller owns its dataset, else raise 404/403."""
+    run = db.get(TrainingRun, run_id)
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Run not found"
+        )
+    dataset = db.get(Dataset, run.dataset_id)
+    if dataset is not None and dataset.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this run",
+        )
+    return run
+
+
+@router.get("/datasets/{dataset_id}/runs", response_model=TrainingRunsOutput)
 def list_runs(
     dataset_id: int,
+    page: int = Query(1, ge=1, description="Page number (newest first)"),
+    limit: int = Query(20, ge=1, le=100, description="Runs per page"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
+    """Return a dataset's training runs, newest first, paginated."""
+    total = db.exec(
+        select(func.count(TrainingRun.id)).where(
+            TrainingRun.dataset_id == dataset_id
+        )
+    ).one()
+    offset = (page - 1) * limit
     runs = db.exec(
         select(TrainingRun)
         .where(TrainingRun.dataset_id == dataset_id)
         .order_by(TrainingRun.id.desc())
+        .offset(offset)
+        .limit(limit)
     ).all()
-    return [TrainingRunSummary(run_id=r.id, status=r.status) for r in runs]
+    return TrainingRunsOutput(
+        runs=[_run_summary(db, r) for r in runs],
+        pagination=create_pagination_metadata(total, limit, offset),
+    )
+
+
+@router.patch("/runs/{run_id}", response_model=TrainingRunSummary)
+def update_run(
+    run_id: int,
+    payload: TrainingRunUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Rename a run and/or mark it as the dataset's preferred run."""
+    _get_owned_run(db, run_id, current_user)
+    run = training_service.update_run(
+        db, run_id, name=payload.name, preferred=payload.preferred
+    )
+    return _run_summary(db, run)
+
+
+@router.delete("/runs/{run_id}", response_model=MessageOutput)
+def delete_run(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Delete a run and its dependent metrics/model/evaluation rows."""
+    _get_owned_run(db, run_id, current_user)
+    training_service.delete_run(db, run_id)
+    return MessageOutput(message="deleted")
 
 
 @router.get("/runs/{run_id}/evaluation", response_model=RunEvaluationResponse)

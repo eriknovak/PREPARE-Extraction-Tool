@@ -200,3 +200,102 @@ def stop_run(db: Session, run_id: int) -> None:
     run.status = "stopped"
     db.add(run)
     db.commit()
+
+
+def has_active_run(db: Session, dataset_id: int) -> bool:
+    """Return True if the dataset has a pending or running training run.
+
+    Args:
+        db (Session): Active DB session.
+        dataset_id (int): Dataset to check.
+
+    Returns:
+        bool: Whether an active (pending/running) run exists.
+    """
+    active = db.exec(
+        select(TrainingRun)
+        .where(TrainingRun.dataset_id == dataset_id)
+        .where(TrainingRun.status.in_(["pending", "running"]))
+    ).first()
+    return active is not None
+
+
+def update_run(
+    db: Session,
+    run_id: int,
+    *,
+    name: Optional[str] = None,
+    preferred: Optional[bool] = None,
+) -> Optional[TrainingRun]:
+    """Rename a run and/or designate it as the dataset's preferred run.
+
+    Setting ``preferred=True`` clears the flag on every other run in the same
+    dataset so at most one run is preferred per dataset.
+
+    Args:
+        db (Session): Active DB session.
+        run_id (int): ID of the TrainingRun to update.
+        name (Optional[str]): New display name (empty string clears it).
+        preferred (Optional[bool]): New preferred flag.
+
+    Returns:
+        Optional[TrainingRun]: The updated run, or None if not found.
+    """
+    run = db.get(TrainingRun, run_id)
+    if run is None:
+        return None
+    if name is not None:
+        stripped = name.strip()
+        run.name = stripped or None
+    if preferred is not None:
+        if preferred:
+            others = db.exec(
+                select(TrainingRun)
+                .where(TrainingRun.dataset_id == run.dataset_id)
+                .where(TrainingRun.id != run.id)
+                .where(TrainingRun.preferred)  # noqa: E712
+            ).all()
+            for other in others:
+                other.preferred = False
+                db.add(other)
+        run.preferred = preferred
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def delete_run(db: Session, run_id: int) -> bool:
+    """Delete a run and its dependent rows.
+
+    Cascade behaviour: the run's TrainingMetric rows are removed via the
+    relationship cascade. If the run produced a Model, that Model and its
+    dependents (Evaluation rows, SourceTermEx extraction rows, train-record
+    links) are removed too, so a deleted run leaves no orphaned artifacts.
+
+    Args:
+        db (Session): Active DB session.
+        run_id (int): ID of the TrainingRun to delete.
+
+    Returns:
+        bool: True if a run was deleted, False if it did not exist.
+    """
+    run = db.get(TrainingRun, run_id)
+    if run is None:
+        return False
+    if run.model_id is not None:
+        model = db.get(Model, run.model_id)
+        if model is not None:
+            links = db.exec(
+                select(ModelTrainRecordLink).where(
+                    ModelTrainRecordLink.model_id == model.id
+                )
+            ).all()
+            for link in links:
+                db.delete(link)
+            db.flush()
+            # ORM cascade removes the model's Evaluation + SourceTermEx rows.
+            db.delete(model)
+    db.delete(run)
+    db.commit()
+    return True

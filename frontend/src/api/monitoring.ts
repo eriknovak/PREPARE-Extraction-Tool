@@ -5,6 +5,8 @@ import type {
   MessageOutput,
   MonitorDatasetStats,
   MonitorRun,
+  RunsOutput,
+  RunUpdate,
   TrainingMetric,
 } from "types";
 
@@ -22,8 +24,30 @@ export function getDatasetStats(datasetId: number) {
 
 /* ---------------- RUNS ---------------- */
 
-export function getDatasetRuns(datasetId: number) {
-  return apiRequest<MonitorRun[]>(`/bioner/datasets/${datasetId}/runs`);
+/** Newest page of runs as a flat array (used by the provider for overlays/pickers). */
+export async function getDatasetRuns(datasetId: number, page = 1, limit = 20) {
+  const res = await apiRequest<RunsOutput>(`/bioner/datasets/${datasetId}/runs?page=${page}&limit=${limit}`);
+  return res.runs;
+}
+
+/** Paginated runs (with pagination metadata) for the comparison run table. */
+export function getDatasetRunsPaged(datasetId: number, page = 1, limit = 20) {
+  return apiRequest<RunsOutput>(`/bioner/datasets/${datasetId}/runs?page=${page}&limit=${limit}`);
+}
+
+/** Rename a run and/or mark it as the dataset's preferred run. */
+export function updateRun(runId: number, payload: RunUpdate) {
+  return apiRequest<MonitorRun>(`/bioner/runs/${runId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Delete a run and its dependent metrics/model/evaluation rows. */
+export function deleteRun(runId: number) {
+  return apiRequest<MessageOutput>(`/bioner/runs/${runId}`, {
+    method: "DELETE",
+  });
 }
 
 export function getRunEvaluation(runId: number) {

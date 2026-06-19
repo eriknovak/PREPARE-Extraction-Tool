@@ -683,12 +683,16 @@ class DistinctValuesOutput(BaseModel):
 
 
 class GLiNERTrainingRequest(BaseModel):
-    """Request body to start a GLiNER training run."""
+    """Request body to start a GLiNER training run.
+
+    Constraints (enforced as 422 on invalid input): at least one label, and a
+    validation split in the range [0, 1).
+    """
 
     dataset_id: Optional[int] = None
-    labels: List[str] = Field(default_factory=list)
+    labels: List[str] = Field(default_factory=list, min_length=1)
     base_model: str = "urchade/gliner_small-v2.1"
-    val_ratio: float = 0.1
+    val_ratio: float = Field(default=0.1, ge=0, lt=1)
 
 
 class TrainingStartResponse(BaseModel):
@@ -696,8 +700,35 @@ class TrainingStartResponse(BaseModel):
 
 
 class TrainingRunSummary(BaseModel):
+    """A training run with the metadata needed to compare/manage runs."""
+
     run_id: int
     status: str
+    name: Optional[str] = None
+    base_model: Optional[str] = None
+    labels: List[str] = Field(default_factory=list)
+    val_ratio: Optional[float] = None
+    created_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    # Path to the trained model artifact (from the linked Model), if any.
+    path: Optional[str] = None
+    # Overall macro-F1 across labels, computed from the run's evaluation (if available).
+    score: Optional[float] = None
+    preferred: bool = False
+
+
+class TrainingRunUpdate(BaseModel):
+    """Partial update for a training run (rename / designate as preferred)."""
+
+    name: Optional[str] = None
+    preferred: Optional[bool] = None
+
+
+class TrainingRunsOutput(BaseModel):
+    """Paginated list of training runs for a dataset."""
+
+    runs: List[TrainingRunSummary]
+    pagination: PaginationMetadata
 
 
 class RunEvaluationResponse(BaseModel):

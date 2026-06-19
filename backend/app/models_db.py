@@ -328,11 +328,14 @@ class TrainingRun(SQLModel, table=True):
     dataset_id: int = Field(
         foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
     )
+    name: Optional[str] = Field(default=None)
     base_model: str
     labels: List[str] = Field(sa_column=Column(JSON))
     val_ratio: float = Field(default=0.0)
     status: str = Field(default="pending", index=True)  # pending|running|completed|failed|stopped
     error_message: Optional[str] = Field(default=None)
+    # Marks the run designated as the dataset's preferred/best model (single per dataset).
+    preferred: bool = Field(default=False)
     model_id: Optional[int] = Field(
         default=None, foreign_key="model.id", ondelete="SET NULL"
     )
