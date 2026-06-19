@@ -36,13 +36,14 @@ def read_model_metadata(model_dir: str) -> dict:
         return metadata
 
 class NERAPI(ls.LitAPI):
-    def __init__(self, 
-                 engine: str, 
-                 model: str, 
+    def __init__(self,
+                 engine: str,
+                 model: str,
                  adapter_model: str | None = None,
                  prompt_path: str | None = None,
-                 use_gpu: bool = False):
-        super().__init__()
+                 use_gpu: bool = False,
+                 api_path: str = "/ner"):
+        super().__init__(api_path=api_path)
         self.engine = engine
         self.model = model
         self.adapter_model = adapter_model
@@ -111,13 +112,13 @@ if __name__ == "__main__":
         model=args.model,
         adapter_model=args.adapter_model,
         prompt_path=args.prompt_path,
-        use_gpu=args.use_gpu
+        use_gpu=args.use_gpu,
+        api_path="/ner"
     )
     server = ls.LitServer(
-        api, 
-        accelerator="auto", 
-        timeout=300, 
-        api_path="/ner", 
+        api,
+        accelerator="auto",
+        timeout=300,
         info_path="/model/info",
         model_metadata=model_metadata
     )
