@@ -319,12 +319,40 @@ class Evaluation(SQLModel, table=True):
     model: Optional["Model"] = Relationship(back_populates="evaluations")
 
 
+class TrainingRunDatasetLink(SQLModel, table=True):
+    """Associates a TrainingRun with a Dataset, tagged by role.
+
+    A run can train on (and optionally evaluate against) several datasets.
+    ``role`` is ``"train"`` or ``"eval"``. The legacy ``TrainingRun.dataset_id``
+    column is kept as the run's *primary* training dataset (the first selected),
+    so per-dataset run listing and ownership checks keep working unchanged.
+    """
+
+    __tablename__ = "training_run_dataset_link"
+
+    training_run_id: Optional[int] = Field(
+        default=None,
+        foreign_key="training_run.id",
+        primary_key=True,
+        ondelete="CASCADE",
+    )
+    dataset_id: Optional[int] = Field(
+        default=None,
+        foreign_key="dataset.id",
+        primary_key=True,
+        ondelete="CASCADE",
+    )
+    role: str = Field(default="train", primary_key=True)  # "train" | "eval"
+
+
 class TrainingRun(SQLModel, table=True):
     """A GLiNER training run and its lifecycle. Produces a Model on success."""
 
     __tablename__ = "training_run"
 
     id: Optional[int] = Field(default=None, primary_key=True)
+    # Primary training dataset (first of the selected training datasets). The
+    # full multi-dataset membership lives in ``training_run_dataset_link``.
     dataset_id: int = Field(
         foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
     )

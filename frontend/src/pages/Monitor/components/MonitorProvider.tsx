@@ -6,19 +6,13 @@ import {
   getAllEvaluations,
   getDatasetRuns,
   getDatasets,
-  getDatasetStats,
+  getMultiDatasetStats,
   getRunEvaluation,
   getTrainingWSUrl,
   startTraining as apiStartTraining,
   stopTraining as apiStopTraining,
 } from "@api/monitoring";
-import type {
-  EvaluationResponse,
-  MonitorDataset,
-  MonitorDatasetStats,
-  MonitorRun,
-  TrainingMetric,
-} from "types";
+import type { EvaluationResponse, MonitorDataset, MonitorDatasetStats, MonitorRun, TrainingMetric } from "types";
 
 import { DEFAULT_MODEL, MonitorContext } from "../hooks/useMonitor";
 import type { MonitorContextValue, MonitorView } from "../hooks/useMonitor";
@@ -47,11 +41,21 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [evaluations, setEvaluations] = useState<EvaluationResponse[]>([]);
   const [evaluationsLoading, setEvaluationsLoading] = useState(false);
-  const [datasetStats, setDatasetStats] = useState<MonitorDatasetStats | null>(null);
+
+  // Training datasets (multi-select) + optional eval datasets, with their
+  // aggregated stats. Default to the single top-level selected dataset.
+  const [trainingDatasetIds, setTrainingDatasetIds] = useState<number[]>([]);
+  const [evalDatasetIds, setEvalDatasetIds] = useState<number[]>([]);
+  const [trainingStats, setTrainingStats] = useState<MonitorDatasetStats | null>(null);
 
   const [runs, setRuns] = useState<MonitorRun[]>([]);
   const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const [valSplitRatio, setValSplitRatio] = useState<number>(0.1);
+
+  // Hyperparameters (defaults match the bioner trainer's current values).
+  const [numEpochs, setNumEpochs] = useState<number>(4);
+  const [learningRate, setLearningRate] = useState<number>(5e-6);
+  const [trainBatchSize, setTrainBatchSize] = useState<number>(8);
 
   const [evaluation, setEvaluation] = useState<EvaluationResponse | null>(null);
   const [evaluationLoading, setEvaluationLoading] = useState(false);
@@ -110,26 +114,37 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     fetchDatasets();
   }, [token]);
 
-  const selectDataset = async (id: number) => {
+  const selectDataset = (id: number) => {
     setSelectedDatasetId(id);
     resetAll();
-    setDatasetStats(null);
-
-    try {
-      const data = await getDatasetStats(id);
-      // guard against stale responses when switching datasets rapidly
-      setSelectedDatasetId((current) => {
-        if (current === id) setDatasetStats(data);
-        return current;
-      });
-    } catch (err) {
-      console.error(err);
-      setSelectedDatasetId((current) => {
-        if (current === id) setDatasetStats(null);
-        return current;
-      });
-    }
+    // Default training to the picked dataset; clear any eval datasets.
+    setTrainingDatasetIds([id]);
+    setEvalDatasetIds([]);
   };
+
+  // ------------------ TRAINING DATASET STATS (aggregated) ------------------
+
+  useEffect(() => {
+    if (!token || trainingDatasetIds.length === 0) {
+      setTrainingStats(null);
+      return;
+    }
+
+    let cancelled = false;
+    getMultiDatasetStats(trainingDatasetIds)
+      .then((data) => {
+        if (!cancelled) setTrainingStats(data);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error(err);
+        setTrainingStats(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trainingDatasetIds, token]);
 
   // ------------------ ALL RUN EVAL (comparison) ------------------
 
@@ -341,7 +356,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const resolvedModel = useCustomModel ? customModel.trim() : baseModel;
 
   const startTraining = async () => {
-    if (!selectedDatasetId) return;
+    if (trainingDatasetIds.length === 0) return;
 
     setTrainingMetrics([]);
     setIsTraining(true);
@@ -349,10 +364,14 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
     try {
       const data = await apiStartTraining({
-        dataset_id: selectedDatasetId,
+        dataset_ids: trainingDatasetIds,
+        eval_dataset_ids: evalDatasetIds,
         labels: selectedLabels,
         base_model: resolvedModel,
         val_ratio: valSplitRatio,
+        num_epochs: numEpochs,
+        learning_rate: learningRate,
+        train_batch_size: trainBatchSize,
       });
 
       setActiveRunId(data.run_id);
@@ -380,7 +399,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     datasets,
     selectedDatasetId,
     selectDataset,
-    datasetStats,
+    trainingStats,
 
     runs,
     selectedRun,
@@ -396,6 +415,10 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     trainingMetrics,
     trainingStatus,
 
+    trainingDatasetIds,
+    setTrainingDatasetIds,
+    evalDatasetIds,
+    setEvalDatasetIds,
     selectedLabels,
     setSelectedLabels,
     valSplitRatio,
@@ -405,6 +428,13 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     setCustomModel,
     useCustomModel,
     setUseCustomModel,
+
+    numEpochs,
+    setNumEpochs,
+    learningRate,
+    setLearningRate,
+    trainBatchSize,
+    setTrainBatchSize,
 
     startTraining,
     stopTraining,

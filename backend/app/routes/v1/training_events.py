@@ -52,9 +52,16 @@ async def receive_training_event(payload: dict, db: Session = Depends(get_sessio
         run = db.get(TrainingRun, run_id)
         record_ids: List[int] = []
         if run is not None:
+            # Link every record across the run's training datasets. Fall back to
+            # the primary dataset if no link rows exist (legacy/back-compat).
+            train_dataset_ids = training_service.get_dataset_ids(
+                db, run_id, role="train"
+            ) or [run.dataset_id]
             record_ids = list(
                 db.exec(
-                    select(Record.id).where(Record.dataset_id == run.dataset_id)
+                    select(Record.id).where(
+                        Record.dataset_id.in_(train_dataset_ids)
+                    )
                 ).all()
             )
         training_service.complete_run(

@@ -6,10 +6,12 @@ from sqlmodel import select
 
 
 def test_run_lifecycle_to_completed(session, sample_dataset, sample_record):
-    run = svc.create_run(session, dataset_id=sample_dataset.id,
+    run = svc.create_run(session, dataset_ids=[sample_dataset.id],
                          base_model="urchade/gliner_small-v2.1",
                          labels=["Drug"], val_ratio=0.1)
     assert run.status == "pending"
+    assert run.dataset_id == sample_dataset.id
+    assert svc.get_dataset_ids(session, run.id, role="train") == [sample_dataset.id]
 
     svc.mark_running(session, run.id)
     assert session.get(TrainingRun, run.id).status == "running"
@@ -34,11 +36,11 @@ def test_run_lifecycle_to_completed(session, sample_dataset, sample_record):
     links = session.exec(
         select(ModelTrainRecordLink).where(ModelTrainRecordLink.model_id == model.id)
     ).all()
-    assert {l.record_id for l in links} == {sample_record.id}
+    assert {link.record_id for link in links} == {sample_record.id}
 
 
 def test_fail_run_records_message(session, sample_dataset):
-    run = svc.create_run(session, dataset_id=sample_dataset.id, base_model="b",
+    run = svc.create_run(session, dataset_ids=[sample_dataset.id], base_model="b",
                          labels=["Drug"], val_ratio=0.0)
     svc.fail_run(session, run.id, "boom")
     refreshed = session.get(TrainingRun, run.id)
@@ -47,7 +49,43 @@ def test_fail_run_records_message(session, sample_dataset):
 
 
 def test_stop_run(session, sample_dataset):
-    run = svc.create_run(session, dataset_id=sample_dataset.id, base_model="b",
+    run = svc.create_run(session, dataset_ids=[sample_dataset.id], base_model="b",
                          labels=["Drug"], val_ratio=0.0)
     svc.stop_run(session, run.id)
     assert session.get(TrainingRun, run.id).status == "stopped"
+
+
+def test_create_run_multi_dataset_links(session, sample_dataset, sample_user):
+    """Multiple training datasets are linked; the first is the primary."""
+    from app.models_db import Dataset
+
+    ds2 = Dataset(name="ds2", labels=["Drug"], user_id=sample_user.id)
+    session.add(ds2)
+    session.commit()
+    session.refresh(ds2)
+
+    run = svc.create_run(
+        session,
+        dataset_ids=[sample_dataset.id, ds2.id],
+        base_model="b",
+        labels=["Drug"],
+        val_ratio=0.1,
+        eval_dataset_ids=[ds2.id],
+    )
+    assert run.dataset_id == sample_dataset.id
+    assert set(svc.get_dataset_ids(session, run.id, role="train")) == {sample_dataset.id, ds2.id}
+    assert svc.get_dataset_ids(session, run.id, role="eval") == [ds2.id]
+
+    # Deleting a run removes its dataset links.
+    svc.delete_run(session, run.id)
+    assert svc.get_dataset_ids(session, run.id, role="train") == []
+
+
+def test_has_active_run_for_datasets(session, sample_dataset):
+    """An active run is detected on any of its training datasets."""
+    assert svc.has_active_run_for_datasets(session, [sample_dataset.id]) is False
+    run = svc.create_run(session, dataset_ids=[sample_dataset.id], base_model="b",
+                         labels=["Drug"], val_ratio=0.0)
+    assert svc.has_active_run_for_datasets(session, [sample_dataset.id]) is True
+    svc.stop_run(session, run.id)
+    assert svc.has_active_run_for_datasets(session, [sample_dataset.id]) is False

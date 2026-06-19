@@ -46,10 +46,10 @@ def tokenize_text(text: str) -> List[str]:
 
 def load_reviewed_training_data(
     db: Session,
-    dataset_id: int,
+    dataset_ids: List[int],
     labels: Optional[List[str]] = None,
 ) -> List[Dict]:
-    """Build GLiNER training data from reviewed records in a dataset.
+    """Build GLiNER training data from reviewed records across datasets.
 
     Only records with ``reviewed=True`` are considered. Each source term with
     valid character offsets is mapped onto the record's token sequence and
@@ -58,7 +58,8 @@ def load_reviewed_training_data(
 
     Args:
         db (Session): Active database session.
-        dataset_id (int): Identifier of the dataset to build training data for.
+        dataset_ids (List[int]): Identifiers of the datasets to build training
+            data from. Reviewed records across all of them are aggregated.
         labels (Optional[List[str]]): If provided, only source terms whose label
             is in this list are included.
 
@@ -66,9 +67,12 @@ def load_reviewed_training_data(
         List[Dict]: A list of ``{"tokenized_text": List[str], "ner": List[List]}``
             training examples.
     """
+    if not dataset_ids:
+        return []
+
     records = db.exec(
         select(Record)
-        .where(Record.dataset_id == dataset_id)
+        .where(Record.dataset_id.in_(dataset_ids))
         .where(Record.reviewed == True)  # noqa: E712
     ).all()
 
