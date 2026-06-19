@@ -137,6 +137,17 @@ class GLiNERFinetuner:
         self._stop_event.set()
 
     # -----------------------------
+    # STATUS (thread-safe)
+    # -----------------------------
+    def _set_status(self, status: str) -> None:
+        with self._status_lock:
+            self._status = status
+
+    def _get_status(self) -> str:
+        with self._status_lock:
+            return self._status
+
+    # -----------------------------
     # SNAPSHOT
     # -----------------------------
     def get_snapshot(self) -> dict:
@@ -144,7 +155,7 @@ class GLiNERFinetuner:
             events = list(self._events)
 
         return {
-            "status": self._status,
+            "status": self._get_status(),
             "new_events": events,
             "output_path": self._output_path,
             "error": self._error,
@@ -190,8 +201,7 @@ class GLiNERFinetuner:
     # RUN ENTRY
     # -----------------------------
     def run(self) -> None:
-        with self._status_lock:
-            self._status = "running"
+        self._set_status("running")
 
         try:
             self._do_train()
@@ -200,7 +210,7 @@ class GLiNERFinetuner:
                 f"Training run {self.run_id} failed: {e}",
                 exc_info=True
             )
-            self._status = "failed"
+            self._set_status("failed")
             self._error = str(e)
 
             self._emit({
@@ -245,7 +255,10 @@ class GLiNERFinetuner:
                 threshold=0.5,
             )
 
-            gold = gold_to_entities(text, item["ner"])
+            # Token-form items carry CHARACTER spans in ``ner_char``; char-form
+            # items only have ``ner`` (already character offsets). gold spans are
+            # sliced as ``text[start:end]`` so they must be character offsets.
+            gold = gold_to_entities(text, item.get("ner_char", item["ner"]))
             pred = [
                 Entity(
                     text=p["text"],
@@ -352,7 +365,7 @@ class GLiNERFinetuner:
         ).to(self.device)
 
         if self._stop_event.is_set():
-            self._status = "stopped"
+            self._set_status("stopped")
             self._emit({
                 "type": "stopped",
                 "run_id": self.run_id,
@@ -385,13 +398,27 @@ class GLiNERFinetuner:
                     continue
 
                 # Reconstruct text by joining tokens with spaces
-                text = " ".join(str(t) for t in tokenized_text)
+                tokens = [str(t) for t in tokenized_text]
+                text = " ".join(tokens)
 
                 if not text.strip():
                     continue
 
-                # Validate NER entries (token indices should be in range)
+                # Char start offset of each token in the joined `text`
+                # (tokens are joined by single spaces).
+                token_char_starts = []
+                offset = 0
+                for tok in tokens:
+                    token_char_starts.append(offset)
+                    offset += len(tok) + 1
+
+                # Validate NER entries (token indices should be in range).
+                # `ner` stays as TOKEN spans into `tokenized_text` — that is
+                # what GLiNER's collator consumes. Everything that slices
+                # ``text[start:end]`` (eval, serialized samples) must use the
+                # CHARACTER spans kept in `ner_char` instead.
                 valid_ner = []
+                valid_ner_char = []
                 for ent in ner:
                     if isinstance(ent, (list, tuple)) and len(ent) == 3:
                         start_tok, end_tok, label = ent
@@ -399,12 +426,16 @@ class GLiNERFinetuner:
                             # Token indices are already correct, just validate bounds
                             if 0 <= start_tok <= end_tok < len(tokenized_text):
                                 valid_ner.append([start_tok, end_tok + 1, label])
+                                char_start = token_char_starts[start_tok]
+                                char_end = token_char_starts[end_tok] + len(tokens[end_tok])
+                                valid_ner_char.append([char_start, char_end, label])
 
                 if valid_ner:
                     cleaned_data.append({
                         "text": text,
-                        "tokenized_text": tokenized_text,
-                        "ner": valid_ner
+                        "tokenized_text": tokens,
+                        "ner": valid_ner,
+                        "ner_char": valid_ner_char,
                     })
                 continue
 
@@ -530,7 +561,8 @@ class GLiNERFinetuner:
         print(f"Validation samples : {len(val_data)} ({val_pct:.1f}%)")
 
         train_ds = GLiNERDataset(train_data)
-        val_ds = GLiNERDataset(val_data)
+        # Eval reads gold spans from the raw items (which carry `ner_char`);
+        # GLiNERDataset.__getitem__ would strip that key, so pass `val_data`.
 
         collator = DataCollator(
             model.config,
@@ -606,11 +638,11 @@ class GLiNERFinetuner:
                     raise KeyboardInterrupt("Training stopped by user")
                 return super().training_step(model, inputs)
 
-            def compute_loss2(self, model, inputs, return_outputs=False, **kwargs):
+            def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
                     raise KeyboardInterrupt("Stopped before loss computation")
-                return super().compute_loss(model, inputs, return_outputs=return_outputs)
+                return super().compute_loss(model, inputs, return_outputs=return_outputs, **kwargs)
 
             def log(self, logs: dict, *args: Any, **kwargs: Any) -> None:
                 super().log(logs, *args, **kwargs)
@@ -666,9 +698,11 @@ class GLiNERFinetuner:
             callbacks=[ProgressCallback()],
         )
 
+        # Derive eval labels from the full cleaned data (train+val union) so
+        # labels that appear only in the validation split are still scored.
         labels = list(set(
             e[2]
-            for item in train_data
+            for item in cleaned_data
             for e in item["ner"]
         ))
         print("labels:", labels)
@@ -689,7 +723,7 @@ class GLiNERFinetuner:
             trainer.train()
 
             # RUN EVALUATION HERE (AFTER TRAINING)
-            metrics, evaluation_samples = self.evaluate_model(model, val_ds, labels)
+            metrics, evaluation_samples = self.evaluate_model(model, val_data, labels)
 
             # ----------------------------
             # SAVE EVALUATION RESULTS
@@ -740,7 +774,7 @@ class GLiNERFinetuner:
             })
 
         except KeyboardInterrupt:
-            self._status = "stopped"
+            self._set_status("stopped")
             self._emit({
                 "type": "stopped",
                 "run_id": self.run_id,
@@ -748,7 +782,7 @@ class GLiNERFinetuner:
             return
 
         if self._stop_event.is_set():
-            self._status = "stopped"
+            self._set_status("stopped")
             return
 
         # Persist trained models into the shared models library (mounted volume),
@@ -779,7 +813,7 @@ class GLiNERFinetuner:
             print(" -", f.resolve())
 
         self._output_path = str(output_path)
-        self._status = "completed"
+        self._set_status("completed")
 
         self._emit({
             "type": "model_saved",
