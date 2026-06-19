@@ -8,6 +8,7 @@ import type {
   ModelSummary,
   MonitorDatasetStats,
   MonitorRun,
+  RunErrorAnalysis,
   RunsOutput,
   RunUpdate,
   TrainingMetric,
@@ -67,6 +68,11 @@ export function getRunEvaluation(runId: number) {
 
 export function getAllRunEvaluations(datasetId: number) {
   return apiRequest<EvaluationResponse[]>(`/bioner/datasets/${datasetId}/runs/evaluations`);
+}
+
+/** Per-label error analysis (confusion counts + example errors) for a run. */
+export function getRunErrorAnalysis(runId: number) {
+  return apiRequest<RunErrorAnalysis>(`/bioner/runs/${runId}/error-analysis`);
 }
 
 /** Alias kept for the heatmap view; uses the per-dataset evaluations endpoint. */

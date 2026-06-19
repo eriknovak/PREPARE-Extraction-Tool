@@ -35,8 +35,10 @@ from app.schemas import (
     FullStatsResponse,
     GLiNERTrainingRequest,
     MessageOutput,
+    LabelErrorAnalysis,
     ModelSummary,
     ModelsOutput,
+    RunErrorAnalysisResponse,
     RunEvaluationResponse,
     SetActiveModelRequest,
     TrainingMetricPoint,
@@ -1141,6 +1143,20 @@ def delete_run(
     return MessageOutput(message="deleted")
 
 
+def _scores_only(per_label: dict) -> dict:
+    """Drop the heavy per-label ``examples`` arrays, keeping scalar scores/counts.
+
+    Used by the score-oriented endpoints (single-run bars, heatmap) so they don't
+    ship example-error text; the full data is served by the error-analysis route.
+    """
+    return {
+        label: {k: v for k, v in metrics.items() if k != "examples"}
+        if isinstance(metrics, dict)
+        else metrics
+        for label, metrics in per_label.items()
+    }
+
+
 @router.get("/runs/{run_id}/evaluation", response_model=RunEvaluationResponse)
 def run_evaluation(
     run_id: int,
@@ -1150,8 +1166,51 @@ def run_evaluation(
     run = db.get(TrainingRun, run_id)
     per_label = {}
     if run is not None and run.model_id is not None:
-        per_label = evaluation_service.get_per_label(db, run.model_id)
+        per_label = _scores_only(evaluation_service.get_per_label(db, run.model_id))
     return RunEvaluationResponse(run_id=run_id, per_label=per_label)
+
+
+@router.get("/runs/{run_id}/error-analysis", response_model=RunErrorAnalysisResponse)
+def run_error_analysis(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Return per-label error analysis for a run: precision/recall, false-positive
+    and false-negative counts, and a bounded sample of concrete example errors.
+
+    The data is read from the run model's stored per-label evaluation JSON. Runs
+    trained before error analysis was added have no such data; for those
+    ``available`` is False and ``per_label`` is empty.
+    """
+    run = _get_owned_run(db, run_id, current_user)
+
+    per_label_raw = (
+        evaluation_service.get_per_label(db, run.model_id) if run.model_id else {}
+    )
+    # Newer runs always carry fp/fn/examples; their presence marks the data as
+    # available. Older runs only have F1/precision/recall scores.
+    available = any(
+        isinstance(m, dict) and ("fp" in m or "examples" in m)
+        for m in per_label_raw.values()
+    )
+
+    per_label = {}
+    if available:
+        for label, m in per_label_raw.items():
+            if not isinstance(m, dict):
+                continue
+            per_label[label] = LabelErrorAnalysis(
+                precision=m.get("precision"),
+                recall=m.get("recall"),
+                fp=m.get("fp"),
+                fn=m.get("fn"),
+                examples=m.get("examples") or [],
+            )
+
+    return RunErrorAnalysisResponse(
+        run_id=run_id, available=available, per_label=per_label
+    )
 
 
 @router.get("/runs/{run_id}/metrics", response_model=List[TrainingMetricPoint])
@@ -1177,7 +1236,9 @@ def dataset_runs_evaluations(
     out = []
     for r in runs:
         per_label = (
-            evaluation_service.get_per_label(db, r.model_id) if r.model_id else {}
+            _scores_only(evaluation_service.get_per_label(db, r.model_id))
+            if r.model_id
+            else {}
         )
         out.append({"run_id": r.id, "per_label": per_label})
     return out

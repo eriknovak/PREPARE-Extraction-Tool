@@ -30,6 +30,66 @@ BACKEND_HOST = settings.BACKEND_HOST
 CALLBACK_URL = f"{BACKEND_HOST}/api/v1/bioner/internal/training-events"
 
 
+# Error-analysis caps keep the payload bounded: up to this many example errors of
+# each kind (false positive / false negative) per label, and each example's
+# context text is truncated to this many characters around the offending span.
+MAX_ERROR_EXAMPLES_PER_KIND = 5
+MAX_ERROR_TEXT_CHARS = 300
+
+
+def _error_snippet(text: str, start: int, end: int) -> tuple[str, int, int]:
+    """Return a bounded context snippet around ``[start, end]`` with adjusted offsets.
+
+    Short texts are returned unchanged. Longer ones are cropped to a window of
+    ``MAX_ERROR_TEXT_CHARS`` centred on the span, with ellipses marking removed
+    text; the returned offsets point at the span inside the snippet.
+
+    Args:
+        text (str): The full sentence text.
+        start (int): Span start offset in ``text``.
+        end (int): Span end offset in ``text``.
+
+    Returns:
+        tuple[str, int, int]: ``(snippet, start_in_snippet, end_in_snippet)``.
+    """
+    if len(text) <= MAX_ERROR_TEXT_CHARS:
+        return text, start, end
+
+    span_len = max(0, end - start)
+    pad = max(0, (MAX_ERROR_TEXT_CHARS - span_len) // 2)
+    win_start = max(0, start - pad)
+    win_end = min(len(text), win_start + MAX_ERROR_TEXT_CHARS)
+    win_start = max(0, win_end - MAX_ERROR_TEXT_CHARS)
+
+    prefix = "…" if win_start > 0 else ""
+    suffix = "…" if win_end < len(text) else ""
+    snippet = prefix + text[win_start:win_end] + suffix
+    offset = len(prefix) - win_start
+    return snippet, start + offset, end + offset
+
+
+def _error_example(text: str, gold: Optional[Entity], predicted: Optional[Entity]) -> dict:
+    """Build a single bounded error example with a snippet centred on the span.
+
+    Exactly one of ``gold`` / ``predicted`` is set: a missed gold span (false
+    negative) or a wrongly predicted span (false positive). Offsets in the
+    returned span are relative to the (possibly truncated) ``text``.
+    """
+    span = gold or predicted
+    snippet, s, e = _error_snippet(text, span.start, span.end)
+
+    def _span(ent: Optional[Entity], new_start: int, new_end: int) -> Optional[dict]:
+        if ent is None:
+            return None
+        return {"text": ent.text, "start": new_start, "end": new_end, "label": ent.label}
+
+    return {
+        "text": snippet,
+        "gold": _span(gold, s, e),
+        "predicted": _span(predicted, s, e),
+    }
+
+
 def gliner_to_entities(text: str, preds: list[dict]) -> list[Entity]:
     return [
         Entity(
@@ -362,7 +422,10 @@ class GLiNERFinetuner:
         Returns:
             tuple: A ``(metrics, evaluation_samples)`` pair where ``metrics``
                 contains a ``per_label`` mapping of label -> dict with
-                ``exact_f1``, ``relaxed_f1``, ``precision`` and ``recall``.
+                ``exact_f1``, ``relaxed_f1``, ``precision``, ``recall`` plus
+                relaxed false-positive/false-negative counts (``fp``, ``fn``) and
+                a bounded list of ``examples`` (concrete error records, each with
+                ``text`` and a ``gold``/``predicted`` span).
         """
         true_entities = []
         pred_entities = []
@@ -437,11 +500,33 @@ class GLiNERFinetuner:
                 label=label,
             )
 
+            # Per-label error analysis: relaxed FP/FN counts plus a bounded sample
+            # of concrete example errors (missed gold spans / wrong predictions).
+            fp_count = 0
+            fn_count = 0
+            fp_examples: list[dict] = []
+            fn_examples: list[dict] = []
+            for sample, gold_ents, pred_ents in zip(evaluation_samples, true_entities, pred_entities):
+                false_positives, false_negatives = metric_engine.sentence_errors(
+                    gold_ents, pred_ents, match_type="relaxed", label=label
+                )
+                fp_count += len(false_positives)
+                fn_count += len(false_negatives)
+                for ent in false_negatives:
+                    if len(fn_examples) < MAX_ERROR_EXAMPLES_PER_KIND:
+                        fn_examples.append(_error_example(sample["text"], gold=ent, predicted=None))
+                for ent in false_positives:
+                    if len(fp_examples) < MAX_ERROR_EXAMPLES_PER_KIND:
+                        fp_examples.append(_error_example(sample["text"], gold=None, predicted=ent))
+
             per_label[label] = {
                 "exact_f1": round(exact_f1, 4),
                 "relaxed_f1": round(relaxed_f1, 4),
                 "precision": round(precision, 4),
                 "recall": round(recall, 4),
+                "fp": fp_count,
+                "fn": fn_count,
+                "examples": fn_examples + fp_examples,
             }
 
         # Micro-averaged (over all labels) relaxed scores for convenience.

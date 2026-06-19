@@ -777,6 +777,45 @@ class RunEvaluationResponse(BaseModel):
     per_label: Dict[str, Dict[str, Any]]
 
 
+class ErrorSpan(BaseModel):
+    """A gold or predicted span within an example error's context text."""
+
+    text: str
+    start: int
+    end: int
+    label: str
+
+
+class ErrorExample(BaseModel):
+    """One concrete per-label error: a context snippet with a gold and/or predicted span.
+
+    A false negative carries a ``gold`` span (missed) with no ``predicted``; a
+    false positive carries a ``predicted`` span (wrong) with no ``gold``.
+    """
+
+    text: str
+    gold: Optional[ErrorSpan] = None
+    predicted: Optional[ErrorSpan] = None
+
+
+class LabelErrorAnalysis(BaseModel):
+    """Per-label confusion summary plus a bounded sample of example errors."""
+
+    precision: Optional[float] = None
+    recall: Optional[float] = None
+    fp: Optional[int] = None
+    fn: Optional[int] = None
+    examples: List[ErrorExample] = Field(default_factory=list)
+
+
+class RunErrorAnalysisResponse(BaseModel):
+    """Per-label error analysis for a run; ``available`` is False for older runs."""
+
+    run_id: int
+    available: bool
+    per_label: Dict[str, LabelErrorAnalysis] = Field(default_factory=dict)
+
+
 class TrainingMetricPoint(BaseModel):
     epoch: int
     loss: Optional[float] = None

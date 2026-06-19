@@ -538,6 +538,39 @@ export interface EvaluationResponse {
   per_label: { [label: string]: PerLabelMetrics };
 }
 
+/** A gold or predicted span inside an example error's context text. */
+export interface ErrorSpan {
+  text: string;
+  start: number;
+  end: number;
+  label: string;
+}
+
+/** One concrete per-label error. A missed gold span has `gold` set and
+ * `predicted` null; a wrong prediction has `predicted` set and `gold` null. */
+export interface ErrorExample {
+  text: string;
+  gold: ErrorSpan | null;
+  predicted: ErrorSpan | null;
+}
+
+/** Per-label confusion summary plus a bounded sample of example errors. */
+export interface LabelErrorAnalysis {
+  precision?: number | null;
+  recall?: number | null;
+  fp?: number | null;
+  fn?: number | null;
+  examples: ErrorExample[];
+}
+
+/** Per-label error analysis for a run. `available` is false for older runs
+ * trained before error analysis was recorded. */
+export interface RunErrorAnalysis {
+  run_id: number;
+  available: boolean;
+  per_label: { [label: string]: LabelErrorAnalysis };
+}
+
 /** A single training metric point streamed over the websocket. */
 export interface TrainingMetric {
   epoch: number;

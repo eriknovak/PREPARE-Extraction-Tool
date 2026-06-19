@@ -58,7 +58,7 @@ def store_evaluation(
     *,
     model_id: int,
     dataset_id: int,
-    per_label: Dict[str, Dict[str, float]],
+    per_label: Dict[str, Dict[str, Any]],
 ) -> None:
     """Replace evaluation rows for a model with one row per label.
 
@@ -66,9 +66,11 @@ def store_evaluation(
         db (Session): Active DB session.
         model_id (int): Model the evaluation belongs to.
         dataset_id (int): Dataset the model was evaluated on.
-        per_label (Dict[str, Dict[str, float]]): Label -> metric mapping. Each
+        per_label (Dict[str, Dict[str, Any]]): Label -> metric mapping. Each
             metric mapping is stored verbatim as flexible JSON (e.g. exact_f1,
-            relaxed_f1, precision, recall).
+            relaxed_f1, precision, recall) and may also carry per-label error
+            analysis (``fp``, ``fn`` counts and a bounded ``examples`` list) for
+            newer runs; older runs simply omit those keys.
     """
     existing = db.exec(select(Evaluation).where(Evaluation.model_id == model_id)).all()
     for row in existing:

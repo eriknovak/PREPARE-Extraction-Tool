@@ -7,6 +7,7 @@ import {
   deleteRun,
   getDatasetActiveModel,
   getDatasetRunsPaged,
+  getRunErrorAnalysis,
   getRunMetrics,
   setDatasetActiveModel,
   updateRun,
@@ -17,10 +18,17 @@ import ConfirmDialog from "@components/ConfirmDialog";
 import Select from "@components/Select";
 import Table, { type Column, type SortState } from "@components/Table";
 import { BarChart, ChartState, LineChart } from "@components/charts";
-import type { EvaluationResponse, MonitorRun, PaginationMetadata, TrainingMetric } from "types";
+import type {
+  EvaluationResponse,
+  MonitorRun,
+  PaginationMetadata,
+  RunErrorAnalysis,
+  TrainingMetric,
+} from "types";
 
 import ModelComparisonHeatmap from "../charts/ModelComparisonHeatmap";
 import PerformanceChart from "../charts/PerformanceChart";
+import ErrorAnalysis from "../components/ErrorAnalysis";
 import {
   METRIC_OPTIONS,
   formatEpoch,
@@ -146,6 +154,10 @@ const ComparisonView = () => {
   const [runLoss, setRunLoss] = useState<TrainingMetric[]>([]);
   const [runLossLoading, setRunLossLoading] = useState(false);
 
+  // Per-label error analysis for the single run picked in the detail section.
+  const [errorAnalysis, setErrorAnalysis] = useState<RunErrorAnalysis | null>(null);
+  const [errorAnalysisLoading, setErrorAnalysisLoading] = useState(false);
+
   // Fetch the first page of runs whenever the dataset changes.
   useEffect(() => {
     if (!selectedDatasetId) {
@@ -267,6 +279,33 @@ const ComparisonView = () => {
       })
       .finally(() => {
         if (!cancelled) setRunLossLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRun]);
+
+  // Fetch the picked run's per-label error analysis.
+  useEffect(() => {
+    if (selectedRun === null) {
+      setErrorAnalysis(null);
+      return;
+    }
+    let cancelled = false;
+    setErrorAnalysisLoading(true);
+    getRunErrorAnalysis(selectedRun)
+      .then((res) => {
+        if (!cancelled) setErrorAnalysis(res);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setErrorAnalysis(null);
+          toast.showToast("Failed to load error analysis", "error");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setErrorAnalysisLoading(false);
       });
     return () => {
       cancelled = true;
@@ -756,6 +795,14 @@ const ComparisonView = () => {
             <PerformanceChart
               evaluation={evaluation}
               loading={evaluationLoading}
+              hasSelectedRun={selectedRun !== null}
+            />
+          </div>
+          <div className={styles.detail__block}>
+            <h3 className={styles.detail__title}>Per-label error analysis</h3>
+            <ErrorAnalysis
+              errorAnalysis={errorAnalysis}
+              loading={errorAnalysisLoading}
               hasSelectedRun={selectedRun !== null}
             />
           </div>
