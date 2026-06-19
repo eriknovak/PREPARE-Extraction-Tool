@@ -342,10 +342,19 @@ def auto_link_entities_for_record(db: Session, record: Record, dataset: Dataset)
         return
 
     term_ids = [t.id for t in terms]
+    # Collect existing links touching this record's terms on EITHER end
+    # (from_term_id OR to_term_id). Manual links are stored direction-normalized
+    # (see create_source_term_link in routes/v1/source_term.py), so an existing
+    # canonical link may have this record's term as its `to` end. We normalize
+    # every pair to an unordered frozenset so a reverse-direction existing link
+    # is still detected and we don't recreate its mirror as a duplicate.
     existing = {
-        (lnk.from_term_id, lnk.to_term_id)
+        frozenset((lnk.from_term_id, lnk.to_term_id))
         for lnk in db.exec(
-            select(SourceTermLink).where(SourceTermLink.from_term_id.in_(term_ids))
+            select(SourceTermLink).where(
+                SourceTermLink.from_term_id.in_(term_ids)
+                | SourceTermLink.to_term_id.in_(term_ids)
+            )
         ).all()
     }
 
@@ -358,9 +367,9 @@ def auto_link_entities_for_record(db: Session, record: Record, dataset: Dataset)
             continue
         if next_term.label not in relation_map[term.label]:
             continue
-        if (term.id, next_term.id) in existing:
+        if frozenset((term.id, next_term.id)) in existing:
             continue
-        existing.add((term.id, next_term.id))
+        existing.add(frozenset((term.id, next_term.id)))
         new_links.append(
             SourceTermLink(
                 from_term_id=term.id,
