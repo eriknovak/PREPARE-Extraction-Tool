@@ -1,3 +1,4 @@
+import itertools
 import logging
 import threading
 from typing import Dict, Optional
@@ -23,6 +24,10 @@ class TrainingJobManager:
                 instance = super().__new__(cls)
                 instance._jobs: Dict[int, GLiNERFinetuner] = {}
                 instance._jobs_lock = threading.Lock()
+                # Monotonic counter recording the order jobs reach a terminal
+                # status, so pruning can keep the most-recently-finished jobs.
+                instance._finish_counter = itertools.count()
+                instance._finish_order: Dict[int, int] = {}
                 cls._instance = instance
         return cls._instance
 
@@ -114,14 +119,22 @@ class TrainingJobManager:
 
     def _prune_old_jobs(self, keep_last: int = 20) -> None:
         with self._jobs_lock:
-            done = [
-                (rid, j)
-                for rid, j in self._jobs.items()
-                if j._status in _TERMINAL_STATUSES
-            ]
+            # Stamp any newly-terminal job with the next finish-order ticket so
+            # we can rank by completion time rather than insertion order.
+            for rid, j in self._jobs.items():
+                if j._status in _TERMINAL_STATUSES and rid not in self._finish_order:
+                    self._finish_order[rid] = next(self._finish_counter)
 
-            for rid, _ in done[:-keep_last]:
+            # Sort terminal jobs by finish order (oldest first) so slicing off
+            # all but the last keep_last keeps the newest finished jobs.
+            done = sorted(
+                (rid for rid, j in self._jobs.items() if j._status in _TERMINAL_STATUSES),
+                key=lambda rid: self._finish_order[rid],
+            )
+
+            for rid in done[:-keep_last]:
                 del self._jobs[rid]
+                self._finish_order.pop(rid, None)
 
 
 def get_training_job_manager() -> TrainingJobManager:
