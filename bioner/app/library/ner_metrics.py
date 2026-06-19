@@ -99,23 +99,27 @@ def _bertscore_ner_evaluation(
     if not filtered_true or not filtered_pred:
         return 0.0, 0.0, 0.0, 1
 
-    scores = []
-    for true_ent in filtered_true:
-        best_score = 0.0
-        for pred_ent in filtered_pred:
-            if true_ent.label != pred_ent.label:
+    def _best_score(ent: Entity, candidates: List[Entity]) -> float:
+        best = 0.0
+        for candidate in candidates:
+            if ent.label != candidate.label:
                 continue
             score = SequenceMatcher(
                 None,
-                true_ent.text.lower().strip(),
-                pred_ent.text.lower().strip(),
+                ent.text.lower().strip(),
+                candidate.text.lower().strip(),
             ).ratio()
-            if score > best_score:
-                best_score = score
-        scores.append(best_score)
+            if score > best:
+                best = score
+        return best
 
-    recall = sum(scores) / len(scores)
-    precision = recall if len(filtered_true) == len(filtered_pred) else sum(scores) / len(filtered_pred)
+    # Recall: for each true entity, best match among predictions
+    best_true_scores = [_best_score(true_ent, filtered_pred) for true_ent in filtered_true]
+    # Precision: for each prediction, best match among true entities
+    best_pred_scores = [_best_score(pred_ent, filtered_true) for pred_ent in filtered_pred]
+
+    recall = sum(best_true_scores) / len(filtered_true) if filtered_true else 0.0
+    precision = sum(best_pred_scores) / len(filtered_pred) if filtered_pred else 0.0
     f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0.0
     return precision, recall, f1, 1
 
