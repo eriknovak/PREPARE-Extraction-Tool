@@ -68,8 +68,16 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const [useCustomModel, setUseCustomModel] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const isTrainingRef = useRef(false);
   const totalEpochsRef = useRef(4);
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
+
+  // keep a ref of isTraining so the WS reconnect logic can read it without re-subscribing
+  useEffect(() => {
+    isTrainingRef.current = isTraining;
+  }, [isTraining]);
 
   // ------------------ RESET ------------------
 
@@ -213,10 +221,8 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!selectedDatasetId || !token) return;
     let closed = false;
-    const ws = new WebSocket(getTrainingWSUrl(token));
-    wsRef.current = ws;
 
-    ws.onmessage = (event) => {
+    const handleMessage = (event: MessageEvent) => {
       if (closed) return;
 
       let data;
@@ -282,9 +288,50 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
       }
     };
 
+    const scheduleReconnect = () => {
+      if (closed) return;
+      // exponential backoff: 1s, 2s, 4s … capped at 30s
+      const attempt = reconnectAttemptsRef.current;
+      const delay = Math.min(30000, 1000 * 2 ** attempt);
+      reconnectAttemptsRef.current = attempt + 1;
+      // only surface the transient state if a training run is actually in flight
+      if (isTrainingRef.current) {
+        setTrainingStatus("Connection lost — reconnecting…");
+      }
+      reconnectTimerRef.current = setTimeout(connect, delay);
+    };
+
+    const connect = () => {
+      if (closed) return;
+      const ws = new WebSocket(getTrainingWSUrl(token));
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        // successful connection — reset the backoff
+        reconnectAttemptsRef.current = 0;
+      };
+
+      ws.onmessage = handleMessage;
+
+      ws.onclose = () => {
+        // ignore the close triggered by intentional teardown (cleanup sets closed)
+        if (closed) return;
+        scheduleReconnect();
+      };
+
+      // onerror is followed by onclose in browsers; let onclose drive the reconnect
+    };
+
+    connect();
+
     return () => {
       closed = true;
-      ws.close();
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      reconnectAttemptsRef.current = 0;
+      wsRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDatasetId, token]);
