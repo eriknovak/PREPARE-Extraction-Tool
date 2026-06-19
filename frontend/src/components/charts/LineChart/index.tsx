@@ -28,6 +28,10 @@ export interface LineChartProps {
   showLegend?: boolean;
   /** See {@link EChart}. Defaults to false so live data animates in. */
   notMerge?: boolean;
+  /** Format y-values for the y-axis labels and tooltip series values. */
+  valueFormatter?: (value: number) => string;
+  /** Format x-axis category labels and the tooltip header. */
+  xAxisFormatter?: (value: string) => string;
 }
 
 /** Generic multi-series line chart. */
@@ -41,18 +45,50 @@ const LineChart = ({
   yMax,
   showLegend = true,
   notMerge,
+  valueFormatter,
+  xAxisFormatter,
 }: LineChartProps) => {
   const option: EChartsOption = {
     grid: { left: 8, right: 16, top: showLegend ? 36 : 16, bottom: 8, containLabel: true },
     legend: showLegend ? { top: 0 } : undefined,
-    tooltip: { trigger: "axis" },
+    tooltip: {
+      trigger: "axis",
+      // Build the body ourselves so both the header (x) and series values (y) are formatted.
+      formatter:
+        valueFormatter || xAxisFormatter
+          ? (params: unknown) => {
+              const items = params as Array<{
+                marker: string;
+                seriesName: string;
+                value: number;
+                axisValue: string;
+              }>;
+              if (!items.length) return "";
+              const header = xAxisFormatter ? xAxisFormatter(items[0].axisValue) : items[0].axisValue;
+              const rows = items
+                .map((it) => {
+                  const val = valueFormatter ? valueFormatter(Number(it.value)) : String(it.value);
+                  return `${it.marker}${it.seriesName}: <b>${val}</b>`;
+                })
+                .join("<br/>");
+              return `${header}<br/>${rows}`;
+            }
+          : undefined,
+    },
     xAxis: {
       type: "category",
       data: xData.map(String),
       name: xName,
       boundaryGap: false,
+      axisLabel: xAxisFormatter ? { formatter: (value: string) => xAxisFormatter(value) } : undefined,
     },
-    yAxis: { type: "value", name: yName, min: yMin, max: yMax },
+    yAxis: {
+      type: "value",
+      name: yName,
+      min: yMin,
+      max: yMax,
+      axisLabel: valueFormatter ? { formatter: (value: number) => valueFormatter(value) } : undefined,
+    },
     series: series.map((s) => ({
       name: s.name,
       type: "line",
