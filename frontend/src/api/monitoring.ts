@@ -22,6 +22,14 @@ export function getDatasetStats(datasetId: number) {
   return apiRequest<MonitorDatasetStats>(`/bioner/datasets/${datasetId}/full-stats`);
 }
 
+/** Aggregated record/term counts and label distribution across multiple datasets. */
+export function getMultiDatasetStats(datasetIds: number[]) {
+  return apiRequest<MonitorDatasetStats>("/bioner/datasets/full-stats", {
+    method: "POST",
+    body: JSON.stringify({ dataset_ids: datasetIds }),
+  });
+}
+
 /* ---------------- RUNS ---------------- */
 
 /** Newest page of runs as a flat array (used by the provider for overlays/pickers). */
@@ -71,18 +79,26 @@ export function getRunMetrics(runId: number) {
 /* ---------------- TRAINING ---------------- */
 
 export function startTraining(payload: {
-  dataset_id: number | null;
+  dataset_ids: number[];
+  eval_dataset_ids: number[];
   labels: string[];
   base_model: string;
   val_ratio: number;
+  num_epochs: number;
+  learning_rate: number;
+  train_batch_size: number;
 }) {
   return apiRequest<{ run_id: number }>("/bioner/training/start", {
     method: "POST",
     body: JSON.stringify({
-      dataset_id: payload.dataset_id,
+      dataset_ids: payload.dataset_ids,
+      eval_dataset_ids: payload.eval_dataset_ids,
       labels: payload.labels,
       base_model: payload.base_model,
       val_ratio: payload.val_ratio,
+      num_epochs: payload.num_epochs,
+      learning_rate: payload.learning_rate,
+      train_batch_size: payload.train_batch_size,
     }),
   });
 }

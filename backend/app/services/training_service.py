@@ -10,6 +10,7 @@ from app.models_db import (
     ModelTrainRecordLink,
     TrainingMetric,
     TrainingRun,
+    TrainingRunDatasetLink,
 )
 from app.services import evaluation_service
 
@@ -17,25 +18,32 @@ from app.services import evaluation_service
 def create_run(
     db: Session,
     *,
-    dataset_id: int,
+    dataset_ids: List[int],
     base_model: str,
     labels: List[str],
     val_ratio: float,
+    eval_dataset_ids: Optional[List[int]] = None,
 ) -> TrainingRun:
     """Create a TrainingRun in the 'pending' state.
 
+    The first id in ``dataset_ids`` becomes the run's primary training dataset
+    (``TrainingRun.dataset_id``); all training and eval datasets are recorded in
+    ``training_run_dataset_link``.
+
     Args:
         db (Session): Active DB session.
-        dataset_id (int): Dataset to train on.
+        dataset_ids (List[int]): Datasets to train on (first = primary).
         base_model (str): HuggingFace model identifier used as starting weights.
         labels (List[str]): NER entity labels the run will train for.
         val_ratio (float): Fraction of data held out for validation.
+        eval_dataset_ids (Optional[List[int]]): Datasets to evaluate against
+            instead of a held-out split (optional).
 
     Returns:
         TrainingRun: The newly created run.
     """
     run = TrainingRun(
-        dataset_id=dataset_id,
+        dataset_id=dataset_ids[0],
         base_model=base_model,
         labels=labels,
         val_ratio=val_ratio,
@@ -44,7 +52,41 @@ def create_run(
     db.add(run)
     db.commit()
     db.refresh(run)
+
+    for dsid in dataset_ids:
+        db.add(
+            TrainingRunDatasetLink(
+                training_run_id=run.id, dataset_id=dsid, role="train"
+            )
+        )
+    for dsid in eval_dataset_ids or []:
+        db.add(
+            TrainingRunDatasetLink(
+                training_run_id=run.id, dataset_id=dsid, role="eval"
+            )
+        )
+    db.commit()
     return run
+
+
+def get_dataset_ids(db: Session, run_id: int, role: str = "train") -> List[int]:
+    """Return the dataset ids linked to a run for the given role.
+
+    Args:
+        db (Session): Active DB session.
+        run_id (int): The training run id.
+        role (str): ``"train"`` or ``"eval"``.
+
+    Returns:
+        List[int]: Linked dataset ids (empty if none recorded).
+    """
+    return list(
+        db.exec(
+            select(TrainingRunDatasetLink.dataset_id)
+            .where(TrainingRunDatasetLink.training_run_id == run_id)
+            .where(TrainingRunDatasetLink.role == role)
+        ).all()
+    )
 
 
 def mark_running(db: Session, run_id: int) -> None:
@@ -220,6 +262,34 @@ def has_active_run(db: Session, dataset_id: int) -> bool:
     return active is not None
 
 
+def has_active_run_for_datasets(db: Session, dataset_ids: List[int]) -> bool:
+    """Return True if any of the given datasets has an active training run.
+
+    Checks the training-dataset links so multi-dataset runs are matched on any
+    of their training datasets, not just the primary one.
+
+    Args:
+        db (Session): Active DB session.
+        dataset_ids (List[int]): Datasets to check.
+
+    Returns:
+        bool: Whether an active (pending/running) run uses any of the datasets.
+    """
+    if not dataset_ids:
+        return False
+    active = db.exec(
+        select(TrainingRun.id)
+        .join(
+            TrainingRunDatasetLink,
+            TrainingRunDatasetLink.training_run_id == TrainingRun.id,
+        )
+        .where(TrainingRunDatasetLink.role == "train")
+        .where(TrainingRunDatasetLink.dataset_id.in_(dataset_ids))
+        .where(TrainingRun.status.in_(["pending", "running"]))
+    ).first()
+    return active is not None
+
+
 def update_run(
     db: Session,
     run_id: int,
@@ -283,6 +353,14 @@ def delete_run(db: Session, run_id: int) -> bool:
     run = db.get(TrainingRun, run_id)
     if run is None:
         return False
+    dataset_links = db.exec(
+        select(TrainingRunDatasetLink).where(
+            TrainingRunDatasetLink.training_run_id == run_id
+        )
+    ).all()
+    for link in dataset_links:
+        db.delete(link)
+    db.flush()
     if run.model_id is not None:
         model = db.get(Model, run.model_id)
         if model is not None:

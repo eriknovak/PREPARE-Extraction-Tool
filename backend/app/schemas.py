@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.models_db import Record, Concept, SourceTerm, Cluster, ProcessingStatus
 
 
@@ -685,14 +685,51 @@ class DistinctValuesOutput(BaseModel):
 class GLiNERTrainingRequest(BaseModel):
     """Request body to start a GLiNER training run.
 
-    Constraints (enforced as 422 on invalid input): at least one label, and a
-    validation split in the range [0, 1).
+    Multiple datasets can be selected for training, and (optionally) a separate
+    set of datasets for evaluation. The legacy single ``dataset_id`` field is
+    still accepted for backward compatibility and folded into ``dataset_ids``.
+
+    Constraints (enforced as 422 on invalid input): at least one training
+    dataset, at least one label, a validation split in [0, 1), and
+    hyperparameters in valid ranges (epochs >= 1, learning rate > 0, batch >= 1).
     """
 
+    # Legacy single-dataset field; folded into ``dataset_ids`` if provided.
     dataset_id: Optional[int] = None
+    dataset_ids: List[int] = Field(default_factory=list)
+    eval_dataset_ids: List[int] = Field(default_factory=list)
     labels: List[str] = Field(default_factory=list, min_length=1)
     base_model: str = "urchade/gliner_small-v2.1"
     val_ratio: float = Field(default=0.1, ge=0, lt=1)
+    # Hyperparameters (defaults match the bioner trainer's current values).
+    num_epochs: int = Field(default=4, ge=1)
+    learning_rate: float = Field(default=5e-6, gt=0)
+    train_batch_size: int = Field(default=8, ge=1)
+
+    @model_validator(mode="after")
+    def _resolve_dataset_ids(self) -> "GLiNERTrainingRequest":
+        """Fold the legacy ``dataset_id`` into ``dataset_ids`` and require >= 1.
+
+        Duplicate ids are removed while preserving order; the first id becomes
+        the run's primary training dataset.
+        """
+        ids = list(self.dataset_ids)
+        if self.dataset_id is not None and self.dataset_id not in ids:
+            ids.insert(0, self.dataset_id)
+        # de-duplicate, preserve order
+        seen: set = set()
+        self.dataset_ids = [i for i in ids if not (i in seen or seen.add(i))]
+        if not self.dataset_ids:
+            raise ValueError("at least one training dataset is required")
+        # eval datasets that are also training datasets are redundant; drop them
+        train_set = set(self.dataset_ids)
+        eval_seen: set = set()
+        self.eval_dataset_ids = [
+            i
+            for i in self.eval_dataset_ids
+            if i not in train_set and not (i in eval_seen or eval_seen.add(i))
+        ]
+        return self
 
 
 class TrainingStartResponse(BaseModel):
@@ -739,6 +776,12 @@ class RunEvaluationResponse(BaseModel):
 class TrainingMetricPoint(BaseModel):
     epoch: int
     loss: Optional[float] = None
+
+
+class FullStatsRequest(BaseModel):
+    """Request body for aggregated stats across multiple datasets."""
+
+    dataset_ids: List[int] = Field(default_factory=list, min_length=1)
 
 
 class FullStatsResponse(BaseModel):

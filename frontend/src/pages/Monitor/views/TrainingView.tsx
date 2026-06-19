@@ -1,3 +1,4 @@
+import { useState } from "react";
 import classNames from "classnames";
 
 import Button from "@components/Button";
@@ -19,14 +20,20 @@ const SPLIT_OPTIONS = [
 ];
 
 /**
- * Training view — trains a new model on the selected dataset: dataset stats and
- * label selection, train/eval split, primary model selection, start/stop, and
- * live training progression (progress bar + loss curve).
+ * Training view — trains a new model on one or more selected datasets: dataset
+ * pickers (training + optional evaluation), aggregated stats and label
+ * selection, train/eval split, base model selection, advanced hyperparameters,
+ * start/stop, and live training progression (progress bar + loss curve).
  */
 const TrainingView = () => {
   const {
+    datasets,
     selectedDatasetId,
-    datasetStats,
+    trainingStats,
+    trainingDatasetIds,
+    setTrainingDatasetIds,
+    evalDatasetIds,
+    setEvalDatasetIds,
     setSelectedLabels,
     valSplitRatio,
     setValSplitRatio,
@@ -34,6 +41,12 @@ const TrainingView = () => {
     setCustomModel,
     useCustomModel,
     setUseCustomModel,
+    numEpochs,
+    setNumEpochs,
+    learningRate,
+    setLearningRate,
+    trainBatchSize,
+    setTrainBatchSize,
     isTraining,
     progress,
     trainingMetrics,
@@ -43,21 +56,60 @@ const TrainingView = () => {
     runs,
   } = useMonitor();
 
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   if (!selectedDatasetId) {
     return <Card title="Training">Select a dataset to train a model.</Card>;
   }
 
+  const datasetOptions = datasets.map((d) => ({ value: String(d.id), label: d.name }));
+  // Eval datasets are distinct from training datasets (overlaps are dropped server-side).
+  const evalOptions = datasetOptions.filter((o) => !trainingDatasetIds.includes(Number(o.value)));
+  const hasEvalDatasets = evalDatasetIds.length > 0;
+
   return (
     <div className={styles.view}>
+      {/* DATASETS */}
+      <Card title="Training data">
+        <div className={styles.field}>
+          <p className={styles.field__label}>Training datasets</p>
+          <Select
+            multiSelect
+            values={trainingDatasetIds.map(String)}
+            onValuesChange={(vals) => setTrainingDatasetIds(vals.map(Number))}
+            options={datasetOptions}
+            placeholder="Select datasets…"
+            fullWidth={false}
+          />
+        </div>
+
+        <div className={styles.field}>
+          <p className={styles.field__label}>Evaluation datasets (optional)</p>
+          <Select
+            multiSelect
+            values={evalDatasetIds.map(String)}
+            onValuesChange={(vals) => setEvalDatasetIds(vals.map(Number))}
+            options={evalOptions}
+            placeholder="Held-out split of training data"
+            fullWidth={false}
+          />
+          <p className={styles.hint}>
+            {hasEvalDatasets
+              ? "Evaluating on the selected datasets."
+              : "No eval datasets — a held-out split of the training data is used."}
+          </p>
+        </div>
+      </Card>
+
       {/* STATS + LABELS */}
-      {datasetStats && (
+      {trainingStats && (
         <Card title="Labels & statistics">
           <div className={styles.stats}>
-            <StatCard label="Records" value={datasetStats.totalRecords} />
-            <StatCard label="Terms" value={datasetStats.totalTerms} />
+            <StatCard label="Records" value={trainingStats.totalRecords} />
+            <StatCard label="Terms" value={trainingStats.totalTerms} />
           </div>
 
-          <LabelSelector datasetStats={datasetStats} onChange={setSelectedLabels} />
+          <LabelSelector datasetStats={trainingStats} onChange={setSelectedLabels} />
         </Card>
       )}
 
@@ -101,12 +153,66 @@ const TrainingView = () => {
             onValueChange={(v) => setValSplitRatio(Number(v))}
             fullWidth={false}
             options={SPLIT_OPTIONS}
+            disabled={hasEvalDatasets}
           />
+          {hasEvalDatasets && <p className={styles.hint}>Ignored while evaluation datasets are selected.</p>}
+        </div>
+
+        {/* Advanced hyperparameters */}
+        <div className={styles.field}>
+          <button
+            type="button"
+            className={styles["advanced-toggle"]}
+            onClick={() => setShowAdvanced((s) => !s)}
+            aria-expanded={showAdvanced}
+          >
+            {showAdvanced ? "▾" : "▸"} Advanced (hyperparameters)
+          </button>
+
+          {showAdvanced && (
+            <div className={styles.hyperparams}>
+              <label className={styles.hyperparam}>
+                <span className={styles.field__label}>Epochs</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={numEpochs}
+                  onChange={(e) => setNumEpochs(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                  className={styles.input}
+                />
+              </label>
+
+              <label className={styles.hyperparam}>
+                <span className={styles.field__label}>Learning rate</span>
+                <input
+                  type="number"
+                  min={0}
+                  step="0.000001"
+                  value={learningRate}
+                  onChange={(e) => setLearningRate(Number(e.target.value))}
+                  className={styles.input}
+                />
+              </label>
+
+              <label className={styles.hyperparam}>
+                <span className={styles.field__label}>Batch size</span>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={trainBatchSize}
+                  onChange={(e) => setTrainBatchSize(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                  className={styles.input}
+                />
+              </label>
+            </div>
+          )}
         </div>
 
         {/* Actions */}
         <div className={styles.actions}>
-          <Button variant="primary" onClick={startTraining} disabled={isTraining || !selectedDatasetId}>
+          <Button variant="primary" onClick={startTraining} disabled={isTraining || trainingDatasetIds.length === 0}>
             Start
           </Button>
           <Button variant="danger" onClick={stopTraining} disabled={!isTraining}>

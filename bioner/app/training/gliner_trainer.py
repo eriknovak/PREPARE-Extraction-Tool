@@ -104,6 +104,7 @@ class GLiNERFinetuner:
         run_id: int,
         base_model_path: str,
         training_data: list[dict],
+        eval_data: Optional[list[dict]] = None,
         device: str = "cpu",
         num_epochs: int = 4,
         learning_rate: float = 5e-6,
@@ -113,6 +114,7 @@ class GLiNERFinetuner:
         self.run_id = run_id
         self.base_model_path = base_model_path
         self.training_data = training_data
+        self.eval_data = eval_data or []
 
         self.device = device
         self.num_epochs = num_epochs
@@ -227,6 +229,127 @@ class GLiNERFinetuner:
     # -----------------------------
     # TRAINING CORE
     # -----------------------------
+
+    def _clean_items(self, data: list[dict]) -> list[dict]:
+        """Normalize raw items into GLiNER trainer format.
+
+        Accepts the backend token form ``{"tokenized_text": [...], "ner":
+        [[tok_start, tok_end, label], ...]}`` or the legacy char form
+        ``{"text": ..., "entities": [...]}``. Token-form items keep their
+        ``tokenized_text`` plus character spans in ``ner_char`` (used by eval and
+        serialized samples, which slice ``text[start:end]``); ``ner`` stays as
+        token spans for the GLiNER collator. Items that yield no valid spans are
+        dropped.
+
+        Args:
+            data (list[dict]): Raw training or evaluation items.
+
+        Returns:
+            list[dict]: Cleaned items ready for training/evaluation.
+        """
+        cleaned_data: list[dict] = []
+
+        for item in data:
+            # Check if data is already in GLiNER token format from backend
+            if "tokenized_text" in item and "ner" in item:
+                tokenized_text = item.get("tokenized_text", [])
+                ner = item.get("ner", [])
+
+                if not isinstance(tokenized_text, list) or not tokenized_text:
+                    continue
+
+                if not isinstance(ner, list):
+                    continue
+
+                # Reconstruct text by joining tokens with spaces
+                tokens = [str(t) for t in tokenized_text]
+                text = " ".join(tokens)
+
+                if not text.strip():
+                    continue
+
+                # Char start offset of each token in the joined `text`
+                # (tokens are joined by single spaces).
+                token_char_starts = []
+                offset = 0
+                for tok in tokens:
+                    token_char_starts.append(offset)
+                    offset += len(tok) + 1
+
+                # Validate NER entries (token indices should be in range).
+                # `ner` stays as TOKEN spans into `tokenized_text` — that is
+                # what GLiNER's collator consumes. Everything that slices
+                # ``text[start:end]`` (eval, serialized samples) must use the
+                # CHARACTER spans kept in `ner_char` instead.
+                valid_ner = []
+                valid_ner_char = []
+                for ent in ner:
+                    if isinstance(ent, (list, tuple)) and len(ent) == 3:
+                        start_tok, end_tok, label = ent
+                        if isinstance(start_tok, int) and isinstance(end_tok, int) and isinstance(label, str):
+                            # Token indices are already correct, just validate bounds
+                            if 0 <= start_tok <= end_tok < len(tokenized_text):
+                                valid_ner.append([start_tok, end_tok + 1, label])
+                                char_start = token_char_starts[start_tok]
+                                char_end = token_char_starts[end_tok] + len(tokens[end_tok])
+                                valid_ner_char.append([char_start, char_end, label])
+
+                if valid_ner:
+                    cleaned_data.append({
+                        "text": text,
+                        "tokenized_text": tokens,
+                        "ner": valid_ner,
+                        "ner_char": valid_ner_char,
+                    })
+                continue
+
+            # FALLBACK: Old format with "entities" field (character-based)
+            text = item.get("text")
+            entities = item.get("entities", [])
+
+            if not isinstance(text, str) or not text.strip():
+                continue
+
+            if not isinstance(entities, list):
+                continue
+
+            ner = []
+
+            for ent in entities:
+                if not isinstance(ent, (list, tuple, dict)):
+                    continue
+
+                if isinstance(ent, (list, tuple)) and len(ent) == 3:
+                    start, end, label = ent
+                elif isinstance(ent, dict):
+                    start = ent.get("start")
+                    end = ent.get("end")
+                    label = ent.get("label")
+                else:
+                    continue
+
+                if not isinstance(start, int) or not isinstance(end, int):
+                    continue
+
+                if not isinstance(label, str):
+                    continue
+
+                if start < 0 or end > len(text) or start >= end:
+                    continue
+
+                span = text[start:end]
+                if len(span.strip()) == 0:
+                    continue
+
+                ner.append([start, end, label])
+
+            if ner:
+                cleaned_data.append({
+                    "text": text,
+                    "ner": ner
+                })
+
+        return cleaned_data
 
     def evaluate_model(self, model, dataset, labels):
         """Evaluate the model and compute per-label exact and relaxed F1.
@@ -379,117 +502,19 @@ class GLiNERFinetuner:
             print("labels:", item.get("labels"))
             print("ner:", item.get("ner"))
 
-        # Check if data is already in correct format (from backend)
-        # Backend format: {"tokenized_text": [...], "ner": [[tok_start, tok_end, label], ...]}
-        # We need to detect and convert to trainer format: {"text": "...", "ner": [[tok_start, tok_end, label], ...]}
-
-        cleaned_data = []
-
-        for item in self.training_data:
-            # Check if data is already in GLiNER token format from backend
-            if "tokenized_text" in item and "ner" in item:
-                tokenized_text = item.get("tokenized_text", [])
-                ner = item.get("ner", [])
-
-                if not isinstance(tokenized_text, list) or not tokenized_text:
-                    continue
-
-                if not isinstance(ner, list):
-                    continue
-
-                # Reconstruct text by joining tokens with spaces
-                tokens = [str(t) for t in tokenized_text]
-                text = " ".join(tokens)
-
-                if not text.strip():
-                    continue
-
-                # Char start offset of each token in the joined `text`
-                # (tokens are joined by single spaces).
-                token_char_starts = []
-                offset = 0
-                for tok in tokens:
-                    token_char_starts.append(offset)
-                    offset += len(tok) + 1
-
-                # Validate NER entries (token indices should be in range).
-                # `ner` stays as TOKEN spans into `tokenized_text` — that is
-                # what GLiNER's collator consumes. Everything that slices
-                # ``text[start:end]`` (eval, serialized samples) must use the
-                # CHARACTER spans kept in `ner_char` instead.
-                valid_ner = []
-                valid_ner_char = []
-                for ent in ner:
-                    if isinstance(ent, (list, tuple)) and len(ent) == 3:
-                        start_tok, end_tok, label = ent
-                        if isinstance(start_tok, int) and isinstance(end_tok, int) and isinstance(label, str):
-                            # Token indices are already correct, just validate bounds
-                            if 0 <= start_tok <= end_tok < len(tokenized_text):
-                                valid_ner.append([start_tok, end_tok + 1, label])
-                                char_start = token_char_starts[start_tok]
-                                char_end = token_char_starts[end_tok] + len(tokens[end_tok])
-                                valid_ner_char.append([char_start, char_end, label])
-
-                if valid_ner:
-                    cleaned_data.append({
-                        "text": text,
-                        "tokenized_text": tokens,
-                        "ner": valid_ner,
-                        "ner_char": valid_ner_char,
-                    })
-                continue
-
-            # FALLBACK: Old format with "entities" field (character-based)
-            text = item.get("text")
-            entities = item.get("entities", [])
-
-            if not isinstance(text, str) or not text.strip():
-                continue
-
-            if not isinstance(entities, list):
-                continue
-
-            ner = []
-
-            for ent in entities:
-                if not isinstance(ent, (list, tuple, dict)):
-                    continue
-
-                if isinstance(ent, (list, tuple)) and len(ent) == 3:
-                    start, end, label = ent
-                elif isinstance(ent, dict):
-                    start = ent.get("start")
-                    end = ent.get("end")
-                    label = ent.get("label")
-                else:
-                    continue
-
-                if not isinstance(start, int) or not isinstance(end, int):
-                    continue
-
-                if not isinstance(label, str):
-                    continue
-
-                if start < 0 or end > len(text) or start >= end:
-                    continue
-
-                span = text[start:end]
-                if len(span.strip()) == 0:
-                    continue
-
-                ner.append([start, end, label])
-
-            if ner:
-                cleaned_data.append({
-                    "text": text,
-                    "ner": ner
-                })
+        # Normalize raw training (and optional eval) items into trainer format.
+        cleaned_data = self._clean_items(self.training_data)
 
         if not cleaned_data:
             raise ValueError(
                 "No valid training samples after conversion. "
                 "Check if labels exist inside text."
             )
+
+        # Separate eval datasets (if provided) are cleaned the same way and used
+        # in place of a held-out split below.
+        cleaned_eval = self._clean_items(self.eval_data)
+
         print("\nCONVERTED GLiNER DATA:")
         for i, item in enumerate(cleaned_data[:3]):
             print(f"\nSample {i}:")
@@ -539,7 +564,12 @@ class GLiNERFinetuner:
 
         total = len(cleaned_data)
 
-        if self.val_ratio > 0:
+        if cleaned_eval:
+            # Separate eval datasets: train on all of cleaned_data, evaluate on
+            # the provided eval set (no held-out split).
+            train_data = cleaned_data
+            val_data = cleaned_eval
+        elif self.val_ratio > 0:
             split_idx = int(len(cleaned_data) * (1 - self.val_ratio))
             train_data = cleaned_data[:split_idx]
             val_data = cleaned_data[split_idx:]
@@ -593,7 +623,7 @@ class GLiNERFinetuner:
             fp16=False,
             use_cpu=(self.device == "cpu"),
             dataloader_num_workers=0,
-            per_device_train_batch_size=1,
+            per_device_train_batch_size=self.train_batch_size,
             report_to="none",
             logging_strategy="steps",
             logging_steps=10,
@@ -699,11 +729,11 @@ class GLiNERFinetuner:
             callbacks=[ProgressCallback()],
         )
 
-        # Derive eval labels from the full cleaned data (train+val union) so
-        # labels that appear only in the validation split are still scored.
+        # Derive eval labels from the train+val union so labels that appear only
+        # in the validation/eval split are still scored.
         labels = list(set(
             e[2]
-            for item in cleaned_data
+            for item in [*train_data, *val_data]
             for e in item["ner"]
         ))
         print("labels:", labels)

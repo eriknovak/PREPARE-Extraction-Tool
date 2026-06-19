@@ -99,13 +99,65 @@ def test_full_stats_shape(client):
     assert body["totalRecords"] >= 1
 
 
+def test_full_stats_multi_shape(client):
+    resp = client.post(
+        "/api/v1/bioner/datasets/full-stats",
+        json={"dataset_ids": [client.dataset_id]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(body) >= {"totalRecords", "totalTerms", "labelDistribution"}
+    assert body["totalRecords"] >= 1
+
+
+def test_start_multi_dataset_records_links(client):
+    from app.models_db import Dataset
+    from app.services import training_service
+
+    db = client.session
+    primary = db.get(Dataset, client.dataset_id)
+    ds2 = Dataset(name="ds2", labels=["Drug"], user_id=primary.user_id)
+    db.add(ds2)
+    db.commit()
+    db.refresh(ds2)
+
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_ids": [client.dataset_id, ds2.id],
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_small-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 200
+    run_id = resp.json()["run_id"]
+    assert set(training_service.get_dataset_ids(db, run_id, role="train")) == {
+        client.dataset_id,
+        ds2.id,
+    }
+
+
+def test_start_rejects_unowned_dataset(client):
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_ids": [999999],
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_small-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 404
+
+
 def test_run_evaluation_shape(client):
     from app.services import training_service
 
     db = client.session
     run = training_service.create_run(
         db,
-        dataset_id=client.dataset_id,
+        dataset_ids=[client.dataset_id],
         base_model="b",
         labels=["Drug"],
         val_ratio=0.0,
@@ -163,7 +215,7 @@ def test_list_runs_paginated_and_enriched(client):
     db = client.session
     run = training_service.create_run(
         db,
-        dataset_id=client.dataset_id,
+        dataset_ids=[client.dataset_id],
         base_model="b",
         labels=["Drug"],
         val_ratio=0.2,
@@ -190,7 +242,7 @@ def test_rename_and_prefer_run(client):
     db = client.session
     run = training_service.create_run(
         db,
-        dataset_id=client.dataset_id,
+        dataset_ids=[client.dataset_id],
         base_model="b",
         labels=["Drug"],
         val_ratio=0.0,
@@ -211,7 +263,7 @@ def test_delete_run(client):
     db = client.session
     run = training_service.create_run(
         db,
-        dataset_id=client.dataset_id,
+        dataset_ids=[client.dataset_id],
         base_model="b",
         labels=["Drug"],
         val_ratio=0.0,

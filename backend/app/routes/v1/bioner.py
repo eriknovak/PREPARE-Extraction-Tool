@@ -30,6 +30,7 @@ from app.routes.v1.auth import get_current_user
 from app.schemas import (
     ExtractionJobStartResponse,
     ExtractionJobStatusResponse,
+    FullStatsRequest,
     FullStatsResponse,
     GLiNERTrainingRequest,
     MessageOutput,
@@ -769,32 +770,59 @@ def start_training(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    # Reject a second concurrent run for the same dataset.
-    if req.dataset_id is not None and training_service.has_active_run(
-        db, req.dataset_id
-    ):
+    # ``req.dataset_ids`` is resolved + de-duplicated by the schema validator.
+    train_ids = req.dataset_ids
+    eval_ids = req.eval_dataset_ids
+
+    # Verify the caller owns every selected dataset (train + eval).
+    for dsid in [*train_ids, *eval_ids]:
+        dataset = db.get(Dataset, dsid)
+        if dataset is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Dataset {dsid} not found",
+            )
+        if dataset.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Not authorized to access dataset {dsid}",
+            )
+
+    # Reject a second concurrent run touching any of the training datasets.
+    if training_service.has_active_run_for_datasets(db, train_ids):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="A training run is already active for this dataset",
+            detail="A training run is already active for one of these datasets",
         )
 
     run = training_service.create_run(
         db,
-        dataset_id=req.dataset_id,
+        dataset_ids=train_ids,
         base_model=req.base_model,
         labels=req.labels,
         val_ratio=req.val_ratio,
+        eval_dataset_ids=eval_ids,
     )
     try:
         training_data = gliner_data_service.load_reviewed_training_data(
-            db, req.dataset_id, req.labels
+            db, train_ids, req.labels
+        )
+        # Separate eval datasets override the held-out split when provided.
+        eval_data = (
+            gliner_data_service.load_reviewed_training_data(db, eval_ids, req.labels)
+            if eval_ids
+            else []
         )
         bioner_client.start_training(
             {
                 "run_id": run.id,
                 "base_model": req.base_model,
                 "training_data": training_data,
+                "eval_data": eval_data,
                 "val_ratio": req.val_ratio,
+                "num_epochs": req.num_epochs,
+                "learning_rate": req.learning_rate,
+                "train_batch_size": req.train_batch_size,
             }
         )
     except Exception as exc:  # trainer unreachable -> mark failed, but still return run
@@ -834,6 +862,35 @@ def full_stats(
         select(SourceTerm.label, func.count(SourceTerm.id))
         .join(Record, Record.id == SourceTerm.record_id)
         .where(Record.dataset_id == dataset_id)
+        .group_by(SourceTerm.label)
+    ).all()
+    return FullStatsResponse(
+        totalRecords=total_records,
+        totalTerms=total_terms,
+        labelDistribution={label: count for label, count in rows},
+    )
+
+
+@router.post("/datasets/full-stats", response_model=FullStatsResponse)
+def full_stats_multi(
+    req: FullStatsRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Aggregate record/term counts and label distribution across datasets."""
+    ids = req.dataset_ids
+    total_records = db.exec(
+        select(func.count(Record.id)).where(Record.dataset_id.in_(ids))
+    ).one()
+    total_terms = db.exec(
+        select(func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id.in_(ids))
+    ).one()
+    rows = db.exec(
+        select(SourceTerm.label, func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id.in_(ids))
         .group_by(SourceTerm.label)
     ).all()
     return FullStatsResponse(

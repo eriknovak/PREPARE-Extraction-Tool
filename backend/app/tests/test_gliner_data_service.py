@@ -44,7 +44,7 @@ def test_load_reviewed_training_data_builds_ner_triples(session, sample_dataset)
     _make_term(session, rec.id, "aspirin", "Drug", 14, 21)
     _make_term(session, rec.id, "warfarin", "Drug", 26, 34)
 
-    data = gliner_data_service.load_reviewed_training_data(session, sample_dataset.id)
+    data = gliner_data_service.load_reviewed_training_data(session, [sample_dataset.id])
 
     assert len(data) == 1
     example = data[0]
@@ -68,7 +68,7 @@ def test_unreviewed_record_excluded(session, sample_dataset):
     rec = _make_record(session, sample_dataset.id, text, reviewed=False)
     _make_term(session, rec.id, "aspirin", "Drug", 14, 21)
 
-    data = gliner_data_service.load_reviewed_training_data(session, sample_dataset.id)
+    data = gliner_data_service.load_reviewed_training_data(session, [sample_dataset.id])
 
     assert data == []
 
@@ -81,7 +81,7 @@ def test_label_filter(session, sample_dataset):
     _make_term(session, rec.id, "warfarin", "Diagnosis", 26, 34)
 
     data = gliner_data_service.load_reviewed_training_data(
-        session, sample_dataset.id, labels=["Drug"]
+        session, [sample_dataset.id], labels=["Drug"]
     )
 
     assert len(data) == 1

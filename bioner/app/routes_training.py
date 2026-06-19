@@ -15,16 +15,21 @@ class TrainingStartRequest(BaseModel):
         base_model (str): HuggingFace GLiNER model path to fine-tune.
         training_data (list[dict]): Training samples, each
             ``{"tokenized_text": [...], "ner": [[start_tok, end_tok, label], ...]}``.
+        eval_data (list[dict]): Optional evaluation samples in the same format.
+            When non-empty, these are used for evaluation instead of a held-out
+            split of the training data.
         num_epochs (int): Number of training epochs.
         learning_rate (float): Optimizer learning rate.
         train_batch_size (int): Training batch size.
         device (str): Device to train on (e.g. ``"cpu"`` or ``"cuda"``).
-        val_ratio (float): Fraction of data held out for validation.
+        val_ratio (float): Fraction of data held out for validation (ignored when
+            ``eval_data`` is provided).
     """
 
     run_id: int
     base_model: str
     training_data: list[dict]
+    eval_data: list[dict] = []
     num_epochs: int = 4
     learning_rate: float = 5e-6
     train_batch_size: int = 8
@@ -63,6 +68,7 @@ async def start_training(request: TrainingStartRequest):
         run_id=request.run_id,
         base_model_path=request.base_model,
         training_data=request.training_data,
+        eval_data=request.eval_data,
         device=request.device,
         num_epochs=request.num_epochs,
         learning_rate=request.learning_rate,
