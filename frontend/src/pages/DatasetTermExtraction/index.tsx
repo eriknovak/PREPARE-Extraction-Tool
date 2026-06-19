@@ -145,9 +145,12 @@ const DatasetTermExtraction: React.FC = () => {
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, loadMoreRecords]);
 
-  // Auto-select first record
+  // Auto-select first record, and re-select when the current selection is no
+  // longer present in the records list (e.g. after a filter change replaces it).
   useEffect(() => {
-    if (records.length > 0 && !selectedRecord) {
+    if (records.length === 0) return;
+    const selectionStillValid = selectedRecord && records.some((r) => r.id === selectedRecord.id);
+    if (!selectionStillValid) {
       selectRecord(records[0]);
     }
   }, [records, selectedRecord, selectRecord]);
