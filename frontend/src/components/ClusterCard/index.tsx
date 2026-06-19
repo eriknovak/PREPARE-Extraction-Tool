@@ -149,7 +149,10 @@ const ClusterCard: React.FC<ClusterCardProps> = ({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => {
+                    setEditTitle(cluster.title);
+                    setIsEditing(true);
+                  }}
                   className={styles["cluster-card__btn-edit-name"]}
                   title="Edit cluster name"
                 >

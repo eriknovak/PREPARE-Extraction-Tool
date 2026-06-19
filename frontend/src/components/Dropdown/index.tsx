@@ -92,7 +92,10 @@ const Dropdown = ({ trigger, items, align = "right" }: DropdownProps) => {
 
   const menuStyle: React.CSSProperties = {
     top: menuPosition.top,
-    ...(align === "right" ? { right: window.innerWidth - menuPosition.left } : { left: menuPosition.left }),
+    left: menuPosition.left,
+    // For right alignment, menuPosition.left holds the trigger's right edge;
+    // shift the menu left by its own width so its right edge meets that point.
+    ...(align === "right" ? { transform: "translateX(-100%)" } : {}),
   };
 
   const menu = isOpen && (
