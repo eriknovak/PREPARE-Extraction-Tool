@@ -1,3 +1,8 @@
+# Pin the project name so the named volumes (e.g. app-db-data) keep a stable,
+# directory-independent name. Without this, launching from a renamed/cloned/
+# differently-cased path creates fresh empty volumes -> the DB appears wiped.
+name: prepare-extraction-tool
+
 services:
 
   postgres:
