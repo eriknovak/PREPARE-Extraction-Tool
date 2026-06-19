@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import classNames from "classnames";
 
 import type { MonitorDatasetStats } from "types";
@@ -6,13 +6,19 @@ import type { MonitorDatasetStats } from "types";
 import styles from "./styles.module.css";
 
 interface Props {
-  datasetId: number | null;
   datasetStats: MonitorDatasetStats | null;
   onChange: (selectedLabels: string[]) => void;
 }
 
+const sameLabelSet = (a: string[], b: string[]) => {
+  if (a.length !== b.length) return false;
+  const setB = new Set(b);
+  return a.every((label) => setB.has(label));
+};
+
 const LabelSelector = ({ datasetStats, onChange }: Props) => {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const prevLabelsRef = useRef<string[]>([]);
 
   // default select all labels when dataset changes
   useEffect(() => {
@@ -20,7 +26,12 @@ const LabelSelector = ({ datasetStats, onChange }: Props) => {
 
     const allLabels = Object.keys(datasetStats.labelDistribution);
     setSelectedLabels(allLabels);
-    onChange(allLabels); // immediately notify parent
+
+    // only notify the parent when the label set actually changes
+    if (!sameLabelSet(prevLabelsRef.current, allLabels)) {
+      prevLabelsRef.current = allLabels;
+      onChange(allLabels);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetStats]);
 
@@ -28,6 +39,7 @@ const LabelSelector = ({ datasetStats, onChange }: Props) => {
     setSelectedLabels((prev) => {
       const updated = prev.includes(label) ? prev.filter((l) => l !== label) : [...prev, label];
 
+      prevLabelsRef.current = updated;
       onChange(updated); // instant update to parent
 
       return updated;

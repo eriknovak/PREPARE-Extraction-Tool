@@ -122,9 +122,22 @@ const Monitor = () => {
   const selectDataset = async (id: number) => {
     setSelectedDatasetId(id);
     resetAll();
+    setDatasetStats(null);
 
-    const data = await getDatasetStats(id);
-    setDatasetStats(data);
+    try {
+      const data = await getDatasetStats(id);
+      // guard against stale responses when switching datasets rapidly
+      setSelectedDatasetId((current) => {
+        if (current === id) setDatasetStats(data);
+        return current;
+      });
+    } catch (err) {
+      console.error(err);
+      setSelectedDatasetId((current) => {
+        if (current === id) setDatasetStats(null);
+        return current;
+      });
+    }
   };
 
   // ------------------ ALL RUN EVAL (comparison) ------------------
@@ -132,11 +145,25 @@ const Monitor = () => {
   useEffect(() => {
     if (!selectedDatasetId || !token) return;
 
+    let cancelled = false;
     setEvaluationsLoading(true);
     getAllEvaluations(selectedDatasetId)
-      .then((data) => setEvaluations(Array.isArray(data) ? data : []))
-      .catch(() => setEvaluations([]))
-      .finally(() => setEvaluationsLoading(false));
+      .then((data) => {
+        if (cancelled) return;
+        setEvaluations(Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEvaluations([]);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setEvaluationsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedDatasetId, token]);
 
   // ------------------ RUNS ------------------
@@ -144,14 +171,18 @@ const Monitor = () => {
   useEffect(() => {
     if (!selectedDatasetId || !token) return;
 
+    let cancelled = false;
+
     const fetchRuns = async () => {
       try {
         const data = await getDatasetRuns(selectedDatasetId);
+        if (cancelled) return;
         const runsArray = Array.isArray(data) ? data : [];
 
         setRuns(runsArray);
         setSelectedRun(runsArray?.[0]?.run_id ?? null);
       } catch (e) {
+        if (cancelled) return;
         console.error(e);
         setRuns([]);
         setSelectedRun(null);
@@ -159,6 +190,10 @@ const Monitor = () => {
     };
 
     fetchRuns();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedDatasetId, token]);
 
   // ------------------ SINGLE EVAL ------------------
@@ -169,11 +204,25 @@ const Monitor = () => {
       return;
     }
 
+    let cancelled = false;
     setEvaluationLoading(true);
     getRunEvaluation(selectedRun)
-      .then((data) => setEvaluation(data))
-      .catch(() => setEvaluation(null))
-      .finally(() => setEvaluationLoading(false));
+      .then((data) => {
+        if (cancelled) return;
+        setEvaluation(data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setEvaluation(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setEvaluationLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedRun, token]);
 
   // ------------------ WEBSOCKET ------------------
@@ -336,11 +385,7 @@ const Monitor = () => {
               <StatCard label="Terms" value={datasetStats.totalTerms} />
             </div>
 
-            <LabelSelector
-              datasetId={selectedDatasetId}
-              datasetStats={datasetStats}
-              onChange={setSelectedLabels}
-            />
+            <LabelSelector datasetStats={datasetStats} onChange={setSelectedLabels} />
           </Card>
         )}
 
