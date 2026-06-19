@@ -116,3 +116,110 @@ def test_run_evaluation_shape(client):
     resp = client.get(f"/api/v1/bioner/runs/{run.id}/evaluation")
     assert resp.status_code == 200
     assert resp.json()["per_label"]["Drug"]["exact_f1"] == 0.8
+
+
+def test_start_rejects_empty_labels(client):
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_id": client.dataset_id,
+            "labels": [],
+            "base_model": "urchade/gliner_small-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_start_rejects_bad_val_ratio(client):
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_id": client.dataset_id,
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_small-v2.1",
+            "val_ratio": 1.0,
+        },
+    )
+    assert resp.status_code == 422
+
+
+def test_start_rejects_concurrent_active_run(client):
+    payload = {
+        "dataset_id": client.dataset_id,
+        "labels": ["Drug"],
+        "base_model": "urchade/gliner_small-v2.1",
+        "val_ratio": 0.1,
+    }
+    first = client.post("/api/v1/bioner/training/start", json=payload)
+    assert first.status_code == 200
+    second = client.post("/api/v1/bioner/training/start", json=payload)
+    assert second.status_code == 409
+
+
+def test_list_runs_paginated_and_enriched(client):
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_id=client.dataset_id,
+        base_model="b",
+        labels=["Drug"],
+        val_ratio=0.2,
+    )
+    training_service.record_evaluation(
+        db, run.id, {"Drug": {"exact_f1": 0.8}, "Dose": {"exact_f1": 0.6}}
+    )
+    resp = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/runs?page=1&limit=20")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "runs" in body and "pagination" in body
+    assert body["pagination"]["total"] >= 1
+    summary = next(r for r in body["runs"] if r["run_id"] == run.id)
+    assert summary["base_model"] == "b"
+    assert summary["labels"] == ["Drug"]
+    assert summary["val_ratio"] == 0.2
+    # macro-F1 = mean(0.8, 0.6)
+    assert abs(summary["score"] - 0.7) < 1e-6
+
+
+def test_rename_and_prefer_run(client):
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_id=client.dataset_id,
+        base_model="b",
+        labels=["Drug"],
+        val_ratio=0.0,
+    )
+    resp = client.patch(
+        f"/api/v1/bioner/runs/{run.id}",
+        json={"name": "My best run", "preferred": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["name"] == "My best run"
+    assert body["preferred"] is True
+
+
+def test_delete_run(client):
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_id=client.dataset_id,
+        base_model="b",
+        labels=["Drug"],
+        val_ratio=0.0,
+    )
+    resp = client.delete(f"/api/v1/bioner/runs/{run.id}")
+    assert resp.status_code == 200
+    follow = client.get(f"/api/v1/bioner/runs/{run.id}/evaluation")
+    # evaluation endpoint still 200s but the run is gone; list no longer contains it
+    listing = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/runs")
+    assert all(r["run_id"] != run.id for r in listing.json()["runs"])
+    assert follow.status_code == 200

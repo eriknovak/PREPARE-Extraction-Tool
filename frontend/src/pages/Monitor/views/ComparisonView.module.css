@@ -19,6 +19,77 @@
   white-space: nowrap;
 }
 
+/* ── Run table ── */
+.runName {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 500;
+}
+
+.bestIcon {
+  color: var(--color-warning, #d97706);
+}
+
+.preferredIcon {
+  color: var(--color-primary, #2563eb);
+}
+
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  justify-content: flex-end;
+}
+
+.loadMore {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--space-3);
+}
+
+/* ── Leaderboard ── */
+.leaderboard {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.leaderboard li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface-muted, transparent);
+}
+
+.leaderboard__best {
+  background: var(--color-surface-accent, rgba(217, 119, 6, 0.08));
+  font-weight: 600;
+}
+
+.leaderboard__rank {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  width: 2.5rem;
+}
+
+.leaderboard__name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.leaderboard__score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
 /* Section divider introducing the single-model detail block. */
 .divider {
   display: flex;

@@ -467,10 +467,34 @@ export interface MonitorDataset {
   name: string;
 }
 
-/** A training run identifier (optionally with status). */
+/** A training run with the metadata needed to compare/manage runs. */
 export interface MonitorRun {
   run_id: number;
   status?: string;
+  name?: string | null;
+  base_model?: string | null;
+  labels?: string[];
+  val_ratio?: number | null;
+  created_at?: string | null;
+  error_message?: string | null;
+  /** Path to the trained model artifact, if any. */
+  path?: string | null;
+  /** Overall macro-F1 across labels, if evaluation is available. */
+  score?: number | null;
+  /** Whether this run is the dataset's designated preferred/best run. */
+  preferred?: boolean;
+}
+
+/** Paginated list of training runs for a dataset. */
+export interface RunsOutput {
+  runs: MonitorRun[];
+  pagination: PaginationMetadata;
+}
+
+/** Partial update for a training run (rename / designate as preferred). */
+export interface RunUpdate {
+  name?: string | null;
+  preferred?: boolean;
 }
 
 /** Per-label evaluation metrics returned by the bioner backend. */
