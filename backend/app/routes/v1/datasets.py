@@ -204,7 +204,12 @@ async def create_dataset(
     suffix = os.path.splitext(file.filename)[1].lower()
     file_path = await save_upload_to_disk(file, suffix)
 
-    label_list = [label.strip() for label in labels.split(",")]
+    label_list = [label.strip() for label in labels.split(",") if label.strip()]
+    if not label_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one non-empty label is required.",
+        )
     parsed_relations: list = []
     if label_relations:
         try:
