@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import json as _json
+import logging
 import math
 import os
 import re
@@ -87,6 +88,8 @@ from app.utils.value_typing import (
 # ================================================
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # ================================================
 # Helper functions
@@ -557,31 +560,60 @@ def delete_dataset(
         )
     
     verify_dataset_ownership(dataset, current_user.id)
+    # remember the status so the background task can restore it if the
+    # hard-delete fails, keeping the dataset recoverable.
+    previous_status = dataset.status
     dataset.status = ProcessingStatus.DELETED
     db.commit()
 
     # start background deletion
-    background_tasks.add_task(delete_dataset_background, dataset_id)
+    background_tasks.add_task(delete_dataset_background, dataset_id, previous_status)
 
     return MessageOutput(message="Dataset deletion started in the background")
 
 
-def delete_dataset_background(dataset_id: int):
+def delete_dataset_background(
+    dataset_id: int, previous_status: ProcessingStatus = ProcessingStatus.DONE
+):
     with Session(engine) as db:
         try:
             dataset = db.get(Dataset, dataset_id)
             if dataset is None:
-                print("Cannot find dataset to delete")
+                logger.warning("Cannot find dataset %s to delete", dataset_id)
                 return
 
             db.delete(dataset)
             db.commit()
 
-            print(f"Successfully deleted dataset {dataset_id}")
+            logger.info("Successfully deleted dataset %s", dataset_id)
 
         except Exception as e:
             db.rollback()
-            print(f"Failed to delete dataset {dataset_id}: {e}")
+            logger.error(
+                "Failed to hard-delete dataset %s: %s", dataset_id, e, exc_info=True
+            )
+            # The dataset was flagged DELETED before scheduling this task. Since
+            # the hard-delete failed, restore the previous status (and surface
+            # the error) so it is not silently stuck and the user can retry.
+            try:
+                dataset = db.get(Dataset, dataset_id)
+                if dataset is not None:
+                    dataset.status = previous_status
+                    dataset.error_message = f"Deletion failed: {e}"
+                    db.commit()
+                    logger.info(
+                        "Restored dataset %s to status %s after failed deletion",
+                        dataset_id,
+                        previous_status,
+                    )
+            except Exception as restore_error:
+                db.rollback()
+                logger.error(
+                    "Failed to restore dataset %s after failed deletion: %s",
+                    dataset_id,
+                    restore_error,
+                    exc_info=True,
+                )
 
 
 @router.get(
