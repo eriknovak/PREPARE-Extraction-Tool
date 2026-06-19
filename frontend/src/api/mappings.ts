@@ -116,7 +116,7 @@ export async function exportMappings(datasetId: number, statusFilter?: string): 
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
+  setTimeout(() => window.URL.revokeObjectURL(url), 0);
 }
 
 export async function importMappings(datasetId: number, file: File): Promise<MessageOutput> {

@@ -48,15 +48,10 @@ export async function deleteCluster(clusterId: number): Promise<MessageOutput> {
 }
 
 export async function updateClusterLabel(clusterId: number, label: string, color?: string): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/clusters/${clusterId}/label`, {
+  return apiRequest<void>(`/clusters/${clusterId}/label`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ label, color }),
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to update cluster label");
-  }
 }
 
 export async function reviewLabel(datasetId: number, label: string): Promise<MessageOutput> {
@@ -100,5 +95,5 @@ export async function downloadClusters(datasetId: number, label?: string): Promi
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  window.URL.revokeObjectURL(url);
+  setTimeout(() => window.URL.revokeObjectURL(url), 0);
 }
