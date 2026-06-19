@@ -45,6 +45,16 @@ export const buildLossSeries = (metrics: TrainingMetric[]): LossSeries => ({
   loss: metrics.map((m) => m.loss),
 });
 
+/** Format an epoch (often fractional during a run) as a compact number. */
+export const formatEpoch = (value: string | number): string => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, "");
+};
+
+/** Format a loss value to a fixed precision for axes and tooltips. */
+export const formatLoss = (value: number): string => (Number.isFinite(value) ? value.toFixed(4) : String(value));
+
 /** Per-label evaluation data for the grouped bar chart. */
 export interface PerformanceData {
   categories: string[];

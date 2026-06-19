@@ -3,7 +3,7 @@ import { ChartState, LineChart } from "@components/charts";
 import type { TrainingMetric } from "types";
 
 import { CHART } from "../chartColors";
-import { buildLossSeries } from "../chartData";
+import { buildLossSeries, formatEpoch, formatLoss } from "../chartData";
 
 const CHART_HEIGHT = 280;
 
@@ -27,6 +27,8 @@ const TrainingLossChart = ({ metrics, isTraining, hasRuns, onConfigure }: Props)
         yName="Loss"
         showLegend={false}
         height={CHART_HEIGHT}
+        xAxisFormatter={formatEpoch}
+        valueFormatter={formatLoss}
         series={[{ name: "Loss", data: loss, color: CHART.loss, area: true }]}
       />
     );
