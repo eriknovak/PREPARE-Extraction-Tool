@@ -637,11 +637,13 @@ class GLiNERFinetuner:
                     raise KeyboardInterrupt("Training stopped by user")
                 return super().training_step(model, inputs)
 
-            def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+            def compute_loss(self, model, inputs, *args, **kwargs):
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
                     raise KeyboardInterrupt("Stopped before loss computation")
-                return super().compute_loss(model, inputs, return_outputs=return_outputs, **kwargs)
+                # Forward args transparently: gliner's Trainer.compute_loss only
+                # accepts (model, inputs); injecting return_outputs raises TypeError.
+                return super().compute_loss(model, inputs, *args, **kwargs)
 
             def log(self, logs: dict, *args: Any, **kwargs: Any) -> None:
                 super().log(logs, *args, **kwargs)
