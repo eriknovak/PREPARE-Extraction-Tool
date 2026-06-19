@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 import json as _json
 import logging
-import math
 import os
 import re
 from typing import List, Optional, Union
@@ -82,6 +81,8 @@ from app.utils.value_typing import (
     normalize_date_to_key,
     normalize_measure_to_key,
 )
+from app.utils.vector_math import cosine_similarity as _cosine_similarity
+from app.utils.vector_math import mean_vector as _compute_centroid
 
 # ================================================
 # Route definitions
@@ -657,9 +658,23 @@ def download_dataset(
 
     file_extension = "json" if format in {"json", "gliner"} else "csv"
 
-    filename_parts = [dataset.name]
-    if format == "gliner":
-        filename_parts.append("extracted_terms")
+    # Sanitize the dataset name before placing it in the Content-Disposition
+    # header: strip quotes/control chars (header-injection guard) and replace
+    # whitespace with underscores (same approach as omop_export.py).
+    safe_name = re.sub(r'["\r\n\t]', "", dataset.name)
+    safe_name = re.sub(r"\s+", "_", safe_name.strip())
+    if not safe_name:
+        safe_name = f"dataset_{dataset.id}"
+
+    suffix_by_format = {
+        "json": "records",
+        "csv": "records",
+        "gliner": "extracted_terms",
+    }
+    filename_parts = [safe_name]
+    suffix = suffix_by_format.get(format)
+    if suffix:
+        filename_parts.append(suffix)
     filename = "_".join(filename_parts)
 
     return StreamingResponse(
@@ -1434,21 +1449,6 @@ def _merge_labels_by_spelling(
     return merged
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
-    """Compute cosine similarity for two vectors"""
-    dot = 0.0
-    na = 0.0
-    nb = 0.0
-    for x, y in zip(a, b):
-        dot += x * y
-        na += x * x
-        nb += y * y
-    denom = math.sqrt(na) * math.sqrt(nb)
-    if denom == 0.0:
-        return 0.0
-    return dot / denom
-
-
 def _to_list_matrix(embeddings) -> List[List[float]]:
     """
     Convert embeddings to list of listd regardless of whether they come as:
@@ -1460,19 +1460,6 @@ def _to_list_matrix(embeddings) -> List[List[float]]:
     if hasattr(embeddings, "tolist"):
         return embeddings.tolist()
     return embeddings
-
-
-def _compute_centroid(vecs: List[List[float]]) -> List[float]:
-    """Compute mean vector (centroid) for a list of vectors."""
-    if not vecs:
-        return []
-    dim = len(vecs[0])
-    acc = [0.0] * dim
-    for v in vecs:
-        for i in range(dim):
-            acc[i] += float(v[i])
-    n = float(len(vecs))
-    return [x / n for x in acc]
 
 
 def _merge_labels_by_centroid_similarity(
