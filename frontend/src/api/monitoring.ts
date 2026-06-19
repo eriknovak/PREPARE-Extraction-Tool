@@ -5,6 +5,7 @@ import type {
   MessageOutput,
   MonitorDatasetStats,
   MonitorRun,
+  TrainingMetric,
 } from "types";
 
 // Note: auth is injected automatically by `apiRequest` from localStorage.
@@ -36,6 +37,11 @@ export function getAllRunEvaluations(datasetId: number) {
 /** Alias kept for the heatmap view; uses the per-dataset evaluations endpoint. */
 export function getAllEvaluations(datasetId: number) {
   return getAllRunEvaluations(datasetId);
+}
+
+/** Per-epoch loss curve for a single run, ordered by epoch. */
+export function getRunMetrics(runId: number) {
+  return apiRequest<TrainingMetric[]>(`/bioner/runs/${runId}/metrics`);
 }
 
 /* ---------------- TRAINING ---------------- */

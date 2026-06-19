@@ -705,6 +705,11 @@ class RunEvaluationResponse(BaseModel):
     per_label: Dict[str, Dict[str, Any]]
 
 
+class TrainingMetricPoint(BaseModel):
+    epoch: int
+    loss: Optional[float] = None
+
+
 class FullStatsResponse(BaseModel):
     totalRecords: int
     totalTerms: int

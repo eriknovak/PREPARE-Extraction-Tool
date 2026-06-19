@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models_db import (
     Model,
@@ -73,6 +73,23 @@ def add_epoch_metric(db: Session, run_id: int, epoch: int, loss: Optional[float]
     """
     db.add(TrainingMetric(run_id=run_id, epoch=epoch, loss=loss))
     db.commit()
+
+
+def get_run_metrics(db: Session, run_id: int) -> List[TrainingMetric]:
+    """Return a run's per-epoch loss points, ordered by epoch.
+
+    Args:
+        db (Session): Active DB session.
+        run_id (int): ID of the TrainingRun whose metrics to read.
+
+    Returns:
+        List[TrainingMetric]: Metric points ordered ascending by epoch.
+    """
+    return db.exec(
+        select(TrainingMetric)
+        .where(TrainingMetric.run_id == run_id)
+        .order_by(TrainingMetric.epoch)
+    ).all()
 
 
 def _ensure_model(db: Session, run: TrainingRun) -> Model:

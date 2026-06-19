@@ -33,6 +33,7 @@ from app.schemas import (
     GLiNERTrainingRequest,
     MessageOutput,
     RunEvaluationResponse,
+    TrainingMetricPoint,
     TrainingRunSummary,
     TrainingStartResponse,
 )
@@ -854,6 +855,17 @@ def run_evaluation(
     if run is not None and run.model_id is not None:
         per_label = evaluation_service.get_per_label(db, run.model_id)
     return RunEvaluationResponse(run_id=run_id, per_label=per_label)
+
+
+@router.get("/runs/{run_id}/metrics", response_model=List[TrainingMetricPoint])
+def run_metrics(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Return a run's per-epoch loss curve, ordered by epoch."""
+    metrics = training_service.get_run_metrics(db, run_id)
+    return [TrainingMetricPoint(epoch=m.epoch, loss=m.loss) for m in metrics]
 
 
 @router.get("/datasets/{dataset_id}/runs/evaluations")
