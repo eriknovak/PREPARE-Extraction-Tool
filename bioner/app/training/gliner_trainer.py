@@ -153,6 +153,37 @@ def convert_to_gliner_format(data: list[dict]) -> list[dict]:
     return converted
 
 
+class GLiNERDataset(TorchDataset):
+    """Minimal torch Dataset over GLiNER-format samples.
+
+    Yields ``text``/``ner``/``tokenized_text`` per item, falling back to a
+    whitespace split when ``tokenized_text`` is absent. Note this strips other
+    keys (e.g. ``ner_char``), so evaluation reads gold spans from the raw items
+    instead of from this dataset.
+    """
+
+    def __init__(self, data):
+        self.data = data
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        item = self.data[idx]
+
+        # If tokenized_text exists, use it; otherwise just use plain text
+        tokenized_text = item.get("tokenized_text")
+        if not tokenized_text:
+            # Fallback: tokenize the text if not provided
+            tokenized_text = item["text"].split()
+
+        return {
+            "text": item["text"],
+            "ner": item["ner"],
+            "tokenized_text": tokenized_text,
+        }
+
+
 # -----------------------------
 # Trainer
 # -----------------------------
@@ -580,6 +611,62 @@ class GLiNERFinetuner:
             })
             return
 
+        cleaned_data, cleaned_eval = self._prepare_cleaned_data()
+
+        self._dump_cleaned_data(cleaned_data)
+
+        train_data, val_data, total, train_pct, val_pct = self._split_data(
+            cleaned_data, cleaned_eval
+        )
+
+        train_ds, collator, args, labels = self._build_training_components(
+            model, cleaned_data, train_data, val_data
+        )
+
+        trainer = self._build_trainer(model, args, train_ds, collator)
+
+        print("CALLBACKS:", trainer.callback_handler.callbacks)
+
+        self._emit({
+            "type": "training_start",
+            "run_id": self.run_id,
+            "num_epochs": self.num_epochs,
+        })
+
+        for i, ex in enumerate(train_ds):
+            if ex.get("text") is None:
+                raise ValueError(f"Broken sample at {i}: text=None")
+
+        try:
+            trainer.train()
+
+            self._run_evaluation(
+                model, val_data, labels, train_data, total, train_pct, val_pct
+            )
+
+        except KeyboardInterrupt:
+            self._set_status("stopped")
+            self._emit({
+                "type": "stopped",
+                "run_id": self.run_id,
+            })
+            return
+
+        if self._stop_event.is_set():
+            self._set_status("stopped")
+            return
+
+        self._save_model(model)
+
+    def _prepare_cleaned_data(self) -> tuple[list[dict], list[dict]]:
+        """Normalize raw training (and optional eval) items into GLiNER samples.
+
+        Returns:
+            tuple[list[dict], list[dict]]: ``(cleaned_data, cleaned_eval)``.
+
+        Raises:
+            ValueError: If no valid training samples remain after conversion.
+        """
         print("\nTRAINING DATA PREVIEW:")
         for i, item in enumerate(self.training_data[:3]):
             print(f"\nSample {i}:")
@@ -605,6 +692,10 @@ class GLiNERFinetuner:
             print(f"\nSample {i}:")
             print(item)
 
+        return cleaned_data, cleaned_eval
+
+    def _dump_cleaned_data(self, cleaned_data: list[dict]) -> None:
+        """Persist ``cleaned_data`` to JSON for inspection/debugging."""
         # Save cleaned_data to JSON for inspection/debugging
         BASE_DIR = Path.cwd()
         data_output_dir = BASE_DIR / "training_data"
@@ -622,28 +713,14 @@ class GLiNERFinetuner:
         print(f"   Full path: {abs_path}")
         print(f"   Total samples: {len(cleaned_data)}")
 
-        class GLiNERDataset(TorchDataset):
-            def __init__(self, data):
-                self.data = data
+    def _split_data(
+        self, cleaned_data: list[dict], cleaned_eval: list[dict]
+    ) -> tuple[list[dict], list[dict], int, float, float]:
+        """Seeded shuffle + train/val split (or separate eval set), with logging.
 
-            def __len__(self):
-                return len(self.data)
-
-            def __getitem__(self, idx):
-                item = self.data[idx]
-
-                # If tokenized_text exists, use it; otherwise just use plain text
-                tokenized_text = item.get("tokenized_text")
-                if not tokenized_text:
-                    # Fallback: tokenize the text if not provided
-                    tokenized_text = item["text"].split()
-
-                return {
-                    "text": item["text"],
-                    "ner": item["ner"],
-                    "tokenized_text": tokenized_text
-                }
-
+        Returns:
+            tuple: ``(train_data, val_data, total, train_pct, val_pct)``.
+        """
         random.seed(42)
         random.shuffle(cleaned_data)
 
@@ -674,6 +751,22 @@ class GLiNERFinetuner:
         print(f"Train samples      : {len(train_data)} ({train_pct:.1f}%)")
         print(f"Validation samples : {len(val_data)} ({val_pct:.1f}%)")
 
+        return train_data, val_data, total, train_pct, val_pct
+
+    def _build_training_components(
+        self,
+        model,
+        cleaned_data: list[dict],
+        train_data: list[dict],
+        val_data: list[dict],
+    ) -> tuple[GLiNERDataset, DataCollator, TrainingArguments, list[str]]:
+        """Build the train dataset, collator, training args, and eval labels.
+
+        Also runs lightweight sample/span sanity checks before training.
+
+        Returns:
+            tuple: ``(train_ds, collator, args, labels)``.
+        """
         train_ds = GLiNERDataset(train_data)
         # Eval reads gold spans from the raw items (which carry `ner_char`);
         # GLiNERDataset.__getitem__ would strip that key, so pass `val_data`.
@@ -714,6 +807,38 @@ class GLiNERFinetuner:
             logging_steps=10,
         )
 
+        print("\nCHECK SAMPLE SPANS:")
+        for i, item in enumerate(cleaned_data[:3]):
+            text = item["text"]
+            tokenized_text = item.get("tokenized_text", [])
+
+            # If we have tokenized_text, spans are token indices; otherwise character indices
+            if tokenized_text:
+                # Token indices - validate bounds
+                for start, end, label in item["ner"]:
+                    assert 0 <= start <= end <= len(tokenized_text), (
+                        f"Token index out of bounds: [{start}:{end}] for {len(tokenized_text)} tokens"
+                    )
+                    assert start < end, f"Invalid token span: start={start} must be < end={end}"
+            else:
+                # Character indices - validate span is not empty
+                for start, end, label in item["ner"]:
+                    assert text[start:end], "Empty span detected"
+                    assert start < end
+
+        # Derive eval labels from the train+val union so labels that appear only
+        # in the validation/eval split are still scored.
+        labels = list(set(
+            e[2]
+            for item in [*train_data, *val_data]
+            for e in item["ner"]
+        ))
+        print("labels:", labels)
+
+        return train_ds, collator, args, labels
+
+    def _build_trainer(self, model, args, train_ds, collator):
+        """Build the tracking GLiNER trainer wired to this finetuner's events."""
         finetuner = self
 
         class ProgressCallback(TrainerCallback):
@@ -787,25 +912,6 @@ class GLiNERFinetuner:
                 if len(event) > 2:
                     finetuner._emit(event)
 
-        print("\nCHECK SAMPLE SPANS:")
-        for i, item in enumerate(cleaned_data[:3]):
-            text = item["text"]
-            tokenized_text = item.get("tokenized_text", [])
-
-            # If we have tokenized_text, spans are token indices; otherwise character indices
-            if tokenized_text:
-                # Token indices - validate bounds
-                for start, end, label in item["ner"]:
-                    assert 0 <= start <= end <= len(tokenized_text), (
-                        f"Token index out of bounds: [{start}:{end}] for {len(tokenized_text)} tokens"
-                    )
-                    assert start < end, f"Invalid token span: start={start} must be < end={end}"
-            else:
-                # Character indices - validate span is not empty
-                for start, end, label in item["ner"]:
-                    assert text[start:end], "Empty span detected"
-                    assert start < end
-
         trainer = _TrackingTrainer(
             model=model,
             args=args,
@@ -814,93 +920,72 @@ class GLiNERFinetuner:
             callbacks=[ProgressCallback()],
         )
 
-        # Derive eval labels from the train+val union so labels that appear only
-        # in the validation/eval split are still scored.
-        labels = list(set(
-            e[2]
-            for item in [*train_data, *val_data]
-            for e in item["ner"]
-        ))
-        print("labels:", labels)
+        return trainer
 
-        print("CALLBACKS:", trainer.callback_handler.callbacks)
+    def _run_evaluation(
+        self,
+        model,
+        val_data: list[dict],
+        labels: list[str],
+        train_data: list[dict],
+        total: int,
+        train_pct: float,
+        val_pct: float,
+    ) -> None:
+        """Evaluate the trained model, persist results, and emit completion."""
+        # RUN EVALUATION HERE (AFTER TRAINING)
+        metrics, evaluation_samples = self.evaluate_model(model, val_data, labels)
+
+        # ----------------------------
+        # SAVE EVALUATION RESULTS
+        # ----------------------------
+        eval_output_dir = Path.cwd() / "training_data"
+        eval_output_dir.mkdir(parents=True, exist_ok=True)
+
+        eval_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        evaluation_file = eval_output_dir / f"evaluation_run{self.run_id}_{eval_timestamp}.json"
+
+        evaluation_payload = {
+            "run_id": self.run_id,
+            "base_model": self.base_model_path,
+            "dataset_size": {
+                "train": len(train_data),
+                "val": len(val_data),
+                "total": total,
+            },
+            "split_ratio": {
+                "train_pct": train_pct,
+                "val_pct": val_pct,
+            },
+            "labels": labels,
+            "metrics": metrics,
+            "evaluation_samples": evaluation_samples,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        with open(evaluation_file, "w", encoding="utf-8") as f:
+            json.dump(evaluation_payload, f, indent=2, ensure_ascii=False)
+
+        print(f"\nEvaluation saved to: {evaluation_file.resolve()}")
+
+        print("\n========== EVALUATION RESULTS ==========\n")
+
+        for label, scores in metrics["per_label"].items():
+            print(f"[{label}]")
+            print(f"  exact_f1   : {scores['exact_f1']:.4f}")
+            print(f"  relaxed_f1 : {scores['relaxed_f1']:.4f}")
+            print(f"  precision  : {scores['precision']:.4f}")
+            print(f"  recall     : {scores['recall']:.4f}\n")
 
         self._emit({
-            "type": "training_start",
+            "type": "evaluation_completed",
             "run_id": self.run_id,
-            "num_epochs": self.num_epochs,
+            "metrics": {"per_label": metrics["per_label"]},
         })
 
-        for i, ex in enumerate(train_ds):
-            if ex.get("text") is None:
-                raise ValueError(f"Broken sample at {i}: text=None")
-
-        try:
-            trainer.train()
-
-            # RUN EVALUATION HERE (AFTER TRAINING)
-            metrics, evaluation_samples = self.evaluate_model(model, val_data, labels)
-
-            # ----------------------------
-            # SAVE EVALUATION RESULTS
-            # ----------------------------
-            eval_output_dir = Path.cwd() / "training_data"
-            eval_output_dir.mkdir(parents=True, exist_ok=True)
-
-            eval_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-            evaluation_file = eval_output_dir / f"evaluation_run{self.run_id}_{eval_timestamp}.json"
-
-            evaluation_payload = {
-                "run_id": self.run_id,
-                "base_model": self.base_model_path,
-                "dataset_size": {
-                    "train": len(train_data),
-                    "val": len(val_data),
-                    "total": total,
-                },
-                "split_ratio": {
-                    "train_pct": train_pct,
-                    "val_pct": val_pct,
-                },
-                "labels": labels,
-                "metrics": metrics,
-                "evaluation_samples": evaluation_samples,
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-
-            with open(evaluation_file, "w", encoding="utf-8") as f:
-                json.dump(evaluation_payload, f, indent=2, ensure_ascii=False)
-
-            print(f"\nEvaluation saved to: {evaluation_file.resolve()}")
-
-            print("\n========== EVALUATION RESULTS ==========\n")
-
-            for label, scores in metrics["per_label"].items():
-                print(f"[{label}]")
-                print(f"  exact_f1   : {scores['exact_f1']:.4f}")
-                print(f"  relaxed_f1 : {scores['relaxed_f1']:.4f}")
-                print(f"  precision  : {scores['precision']:.4f}")
-                print(f"  recall     : {scores['recall']:.4f}\n")
-
-            self._emit({
-                "type": "evaluation_completed",
-                "run_id": self.run_id,
-                "metrics": {"per_label": metrics["per_label"]},
-            })
-
-        except KeyboardInterrupt:
-            self._set_status("stopped")
-            self._emit({
-                "type": "stopped",
-                "run_id": self.run_id,
-            })
-            return
-
-        if self._stop_event.is_set():
-            self._set_status("stopped")
-            return
-
+    def _save_model(self, model) -> None:
+        """Persist the trained model to the shared models library and emit events."""
         # Persist trained models into the shared models library (mounted volume),
         # one folder per run, so they survive container restarts and can be served
         # by setting BIONER_MODEL to this path.
