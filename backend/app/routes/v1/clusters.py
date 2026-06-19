@@ -66,6 +66,36 @@ def verify_dataset_ownership(dataset: Dataset, user_id: int):
         )
 
 
+def _invalidate_suggestions_for_deleted_cluster(
+    db: Session,
+    deleted_cluster_id: int,
+    *,
+    reviewed_by_user_id: int,
+    reviewed_at: datetime,
+    skip_suggestion_id: int | None = None,
+):
+    """
+    Reject any other PENDING merge suggestions that reference a cluster that was
+    just deleted during a merge. Without this, those suggestions stay pending but
+    point at a non-existent cluster, causing later accepts to 404 / be skipped.
+    """
+    stale = db.exec(
+        select(ClusterMergeSuggestion)
+        .where(ClusterMergeSuggestion.status == "pending")
+        .where(
+            (ClusterMergeSuggestion.cluster_a_id == deleted_cluster_id)
+            | (ClusterMergeSuggestion.cluster_b_id == deleted_cluster_id)
+        )
+    ).all()
+    for other in stale:
+        if skip_suggestion_id is not None and other.id == skip_suggestion_id:
+            continue
+        other.status = "rejected"
+        other.reviewed_at = reviewed_at
+        other.reviewed_by_user_id = reviewed_by_user_id
+        db.add(other)
+
+
 # ================================================
 # Clusters routes
 # ================================================
@@ -312,13 +342,24 @@ def accept_merge_suggestion(
         db.add(t)
 
     # 2) Delete cluster B
+    deleted_cluster_id = cluster_b.id
     db.delete(cluster_b)
 
     # 3) Mark suggestion accepted
+    now = datetime.now(timezone.utc)
     suggestion.status = "accepted"
-    suggestion.reviewed_at = datetime.now(timezone.utc)
+    suggestion.reviewed_at = now
     suggestion.reviewed_by_user_id = current_user.id
     db.add(suggestion)
+
+    # 4) Invalidate other pending suggestions referencing the deleted cluster
+    _invalidate_suggestions_for_deleted_cluster(
+        db,
+        deleted_cluster_id,
+        reviewed_by_user_id=current_user.id,
+        reviewed_at=now,
+        skip_suggestion_id=suggestion.id,
+    )
 
     db.commit()
 
@@ -387,6 +428,7 @@ def accept_all_merge_suggestions(
             db.add(t)
 
         # Delete cluster B
+        deleted_cluster_id = cluster_b.id
         db.delete(cluster_b)
 
         # Mark suggestion accepted
@@ -394,6 +436,15 @@ def accept_all_merge_suggestions(
         s.reviewed_at = now
         s.reviewed_by_user_id = current_user.id
         db.add(s)
+
+        # Invalidate other pending suggestions referencing the deleted cluster
+        _invalidate_suggestions_for_deleted_cluster(
+            db,
+            deleted_cluster_id,
+            reviewed_by_user_id=current_user.id,
+            reviewed_at=now,
+            skip_suggestion_id=s.id,
+        )
 
         accepted += 1
 
