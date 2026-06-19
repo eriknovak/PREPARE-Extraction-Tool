@@ -540,7 +540,6 @@ class GLiNERFinetuner:
         total = len(cleaned_data)
 
         if self.val_ratio > 0:
-            random.shuffle(cleaned_data)
             split_idx = int(len(cleaned_data) * (1 - self.val_ratio))
             train_data = cleaned_data[:split_idx]
             val_data = cleaned_data[split_idx:]
