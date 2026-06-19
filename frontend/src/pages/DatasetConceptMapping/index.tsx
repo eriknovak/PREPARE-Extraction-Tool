@@ -163,10 +163,12 @@ export default function DatasetConceptMapping() {
     }
   }, [datasetId, selectedLabel, labelsLoaded]);
 
-  // Sync comment field when selecting a different mapping
+  // Sync comment field when the selected mapping changes. Depend on the comment
+  // too: after mapping/approving, selectedMapping is replaced with the same
+  // cluster_id but an updated comment, which would otherwise leave a stale input.
   useEffect(() => {
     setComment(selectedMapping?.comment ?? "");
-  }, [selectedMapping?.cluster_id]);
+  }, [selectedMapping?.cluster_id, selectedMapping?.comment]);
 
   // Reset view when label changes
   useEffect(() => {
@@ -292,9 +294,17 @@ export default function DatasetConceptMapping() {
     if (!selectedMapping) return;
     if (useSourceTerm) {
       handleAutoSearch();
-    } else if (searchQuery) {
-      handleManualSearch(1);
+      return;
     }
+    if (!searchQuery) return;
+
+    // Debounce the custom-query search so typing doesn't fire a request per
+    // keystroke. Request-sequencing inside handleManualSearch still discards
+    // any out-of-order/stale responses.
+    const timer = setTimeout(() => {
+      handleManualSearch(1);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [selectedMapping, useSourceTerm, handleAutoSearch, handleManualSearch, searchQuery]);
 
   // Handle search (triggered by Enter key or search button)
