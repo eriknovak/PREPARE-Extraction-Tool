@@ -175,8 +175,12 @@ const AnnotatableText: React.FC<AnnotatableTextProps> = ({
       return;
     }
 
-    // Adjust offsets for trimmed text
-    const trimmedStart = startOffset + text.slice(startOffset, endOffset).indexOf(selectedText);
+    // Adjust offsets for trimmed text. Count the leading whitespace skipped by
+    // trim() rather than searching for the trimmed value, since indexOf would
+    // pick an earlier occurrence when the selection repeats the same token.
+    const rawSlice = text.slice(startOffset, endOffset);
+    const leadingWhitespace = rawSlice.length - rawSlice.trimStart().length;
+    const trimmedStart = startOffset + leadingWhitespace;
     const trimmedEnd = trimmedStart + selectedText.length;
 
     // Check for overlaps with existing annotations
