@@ -863,49 +863,6 @@ def set_dataset_active_model(
 
 
 # ================================================
-# NER monitoring helper functions
-# ================================================
-
-def get_records_to_train(dataset_id: int):
-    with Session(engine) as db:
-        statement = (
-            select(Record)
-            .where(Record.dataset_id == dataset_id, Record.reviewed)
-        )
-        return db.exec(statement).all()
-
-def evaluate(model_id: int, dataset_id: int):
-    with Session(engine) as db:
-        model = db.get(Model, model_id)
-        if model is None:
-            return
-
-        # records that were used for training
-        train_ids = {r.id for r in model.train_records}
-
-        # reviewed records
-        reviewed_records = db.exec(
-            select(Record).where(
-                Record.dataset_id == dataset_id,
-                Record.reviewed,
-            )
-        ).all()
-
-        records_to_evaluate = [
-            r for r in reviewed_records if r.id not in train_ids
-        ]
-
-        for record in records_to_evaluate:
-            gold_terms = record.source_terms  # noqa: F841
-            predicted_terms = [  # noqa: F841
-                ex for ex in record.source_terms_ex
-                if ex.model_id == model_id
-            ]
-
-            # compare here
-
-
-# ================================================
 # Training / monitoring routes
 # ================================================
 
