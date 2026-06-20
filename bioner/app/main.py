@@ -110,7 +110,8 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--engine", # previously model_type
                         type=str,
-                        choices=["huggingface", "gliner", "gliner2"],
+                        # "gliner2" is not fully implemented yet — disabled until ready.
+                        choices=["huggingface", "gliner"],
                         help="Type of model to use: 'huggingface' for Hugging Face LLM models or 'gliner' for GLiNER model."
     )
     parser.add_argument("--model", # previously model_path
