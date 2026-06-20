@@ -571,7 +571,7 @@ def get_processing_vocabulary_stats(
         .join(Vocabulary, Concept.vocabulary_id == Vocabulary.id)
         .where(
             Vocabulary.user_id == current_user.id,
-            Vocabulary.status == "PROCESSING",
+            Vocabulary.status == ProcessingStatus.PROCESSING,
         )
     ).one()
 
