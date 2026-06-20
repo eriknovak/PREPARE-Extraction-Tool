@@ -3,9 +3,10 @@ from sqlmodel import Session
 
 from typing import List, Dict
 from datetime import datetime, timezone
-import math
 
 from app.core.model_registry import model_registry
+from app.utils.vector_math import cosine_similarity as _cosine_sim
+from app.utils.vector_math import mean_vector as _mean_vector
 
 from sqlmodel import select
 from app.models_db import ClusterMergeSuggestion, SourceTerm
@@ -18,33 +19,6 @@ from app.schemas import (
     MessageOutput,
     ClusterOutput,
 )
-
-# helpers ?
-
-
-def _cosine_sim(a: List[float], b: List[float]) -> float:
-    dot = 0.0
-    na = 0.0
-    nb = 0.0
-    for x, y in zip(a, b):
-        dot += x * y
-        na += x * x
-        nb += y * y
-    denom = math.sqrt(na) * math.sqrt(nb)
-    return (dot / denom) if denom else 0.0
-
-
-def _mean_vector(vectors: List[List[float]]) -> List[float]:
-    if not vectors:
-        return []
-    dim = len(vectors[0])
-    acc = [0.0] * dim
-    for v in vectors:
-        for i in range(dim):
-            acc[i] += float(v[i])
-    n = float(len(vectors))
-    return [x / n for x in acc]
-
 
 # ================================================
 # Route definitions
