@@ -37,5 +37,7 @@ export async function getActiveExtractionJob(
   const result = await apiRequest<ExtractionJobStatusResponse | null>(
     `/bioner/${datasetId}/records/extract/active`
   );
-  return result ?? null;
+  // apiRequest returns {} for an empty 200 body, so normalize the "no active job"
+  // case (null, undefined, or an empty/jobless object) to null.
+  return result?.job_id ? result : null;
 }
