@@ -463,6 +463,21 @@ const DatasetTermExtraction: React.FC = () => {
             <StatCard label="Identified Terms" value={stats?.extracted_terms_count ?? 0} color="blue" />
             <StatCard label="Reviewed Records" value={reviewedPercentage} color="green" />
           </div>
+          {!isExtractingDataset && hasTrainedModels && (
+            <div className={styles["stats-section__model-row"]}>
+              <div className={styles["stats-section__model"]}>
+                <label className={styles["stats-section__model-label"]}>Extraction model</label>
+                <Select
+                  value={activeModelId != null ? String(activeModelId) : "default"}
+                  onValueChange={handleSelectModel}
+                  fullWidth
+                  size="small"
+                  options={modelOptions}
+                  aria-label="Extraction model"
+                />
+              </div>
+            </div>
+          )}
           <div className={styles["stats-section__actions"]}>
             {isExtractingDataset ? (
               <div className={styles["stats-section__extraction"]}>
@@ -493,19 +508,6 @@ const DatasetTermExtraction: React.FC = () => {
               </div>
             ) : (
               <>
-                {hasTrainedModels && (
-                  <div className={styles["stats-section__model"]}>
-                    <label className={styles["stats-section__model-label"]}>Extraction model</label>
-                    <Select
-                      value={activeModelId != null ? String(activeModelId) : "default"}
-                      onValueChange={handleSelectModel}
-                      fullWidth={false}
-                      size="small"
-                      options={modelOptions}
-                      aria-label="Extraction model"
-                    />
-                  </div>
-                )}
                 <Button
                   variant="outline"
                   onClick={handleTermDownload}
