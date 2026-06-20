@@ -40,6 +40,18 @@ class NERAPI(ls.LitAPI):
         self._swap_lock = threading.Lock()
         self._state_mtime = None
 
+    def __getstate__(self):
+        # litserve spawns the inference worker and pickles this LitAPI to ship it
+        # across; a threading.Lock can't be pickled, so drop it and recreate it in
+        # the worker via __setstate__.
+        state = self.__dict__.copy()
+        state.pop("_swap_lock", None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._swap_lock = threading.Lock()
+
     def setup(self, device):
         self.model = build_engine(
             engine=self.engine,
