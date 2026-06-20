@@ -1,3 +1,6 @@
+# WIP: the GLiNER2 engine is not fully implemented yet. It is intentionally NOT
+# wired into build_engine() / the --engine choices, and the `gliner2` dependency
+# is commented out in requirements.txt. Re-enable both when this is finished.
 import os
 from typing import List
 from gliner2 import GLiNER2

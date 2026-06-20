@@ -15,7 +15,7 @@ The service is started as a module with CLI args (compose passes these from `BIO
 
 ```bash
 python -m app.main \
-  --engine {gliner|gliner2|huggingface} \   # required
+  --engine {gliner|huggingface} \           # required (gliner2 is WIP/disabled)
   --model  <HF id | /models/local-dir> \    # required
   --adapter_model <PEFT/LoRA path> \         # optional (huggingface engine only)
   --prompt_path <prompts.json> \             # optional (LLM engine)
@@ -45,8 +45,9 @@ bash scripts/format.sh    # ruff --fix + ruff format
 ## Layout
 
 - `app/main.py` — CLI parsing + LitServe/FastAPI server bootstrap.
-- `app/engines/` — `build_engine()` factory + `base_engine.py` and three engines:
-  `gliner_engine`, `gliner2_engine`, `llm_engine_huggingface` (4-bit quant + optional PEFT adapter).
+- `app/engines/` — `build_engine()` factory + `base_engine.py` and the engines:
+  `gliner_engine`, `llm_engine_huggingface` (4-bit quant + optional PEFT adapter). `gliner2_engine`
+  exists but is **WIP and not wired up** (disabled in `build_engine` and the `--engine` choices).
 - `app/training/` — `gliner_trainer.py` (GLiNERFinetuner: clean data, train/val split, GLiNER Trainer,
   eval), `job_manager.py` (singleton — **one active job at a time**, returns 409 on conflict),
   `callbacks.py` (`send_event` webhooks to backend).
