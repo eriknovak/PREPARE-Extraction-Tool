@@ -68,28 +68,34 @@
 /* Stats Section */
 .stats-section {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
+  flex-direction: column;
+  gap: 16px;
   margin-bottom: 24px;
 }
 
 .stats-section__grid {
   display: flex;
   gap: 12px;
-  flex: 1;
 }
 
 .stats-section__actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+/* Extraction-model selector — its own row above the actions so it isn't
+   cramped alongside the stat cards and buttons. */
+.stats-section__model-row {
+  display: flex;
 }
 
 .stats-section__model {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-right: 8px;
+  gap: 4px;
+  width: 320px;
+  max-width: 100%;
 }
 
 .stats-section__model-label {
