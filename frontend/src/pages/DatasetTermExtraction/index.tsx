@@ -458,26 +458,28 @@ const DatasetTermExtraction: React.FC = () => {
 
         {/* Statistics and Actions */}
         <div className={styles["stats-section"]}>
-          <div className={styles["stats-section__grid"]}>
-            <StatCard label="Records" value={stats?.total_records ?? 0} />
-            <StatCard label="Identified Terms" value={stats?.extracted_terms_count ?? 0} color="blue" />
-            <StatCard label="Reviewed Records" value={reviewedPercentage} color="green" />
-          </div>
-          {!isExtractingDataset && hasTrainedModels && (
-            <div className={styles["stats-section__model-row"]}>
-              <div className={styles["stats-section__model"]}>
-                <label className={styles["stats-section__model-label"]}>Extraction model</label>
-                <Select
-                  value={activeModelId != null ? String(activeModelId) : "default"}
-                  onValueChange={handleSelectModel}
-                  fullWidth
-                  size="small"
-                  options={modelOptions}
-                  aria-label="Extraction model"
-                />
-              </div>
+          <div className={styles["stats-section__top"]}>
+            <div className={styles["stats-section__grid"]}>
+              <StatCard label="Records" value={stats?.total_records ?? 0} />
+              <StatCard label="Identified Terms" value={stats?.extracted_terms_count ?? 0} color="blue" />
+              <StatCard label="Reviewed Records" value={reviewedPercentage} color="green" />
             </div>
-          )}
+            {!isExtractingDataset && hasTrainedModels && (
+              <div className={styles["stats-section__model"]}>
+                <label className={styles["stats-section__model-label"]}>Extraction model:</label>
+                <div className={styles["stats-section__model-select"]}>
+                  <Select
+                    value={activeModelId != null ? String(activeModelId) : "default"}
+                    onValueChange={handleSelectModel}
+                    fullWidth
+                    size="small"
+                    options={modelOptions}
+                    aria-label="Extraction model"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
           <div className={styles["stats-section__actions"]}>
             {isExtractingDataset ? (
               <div className={styles["stats-section__extraction"]}>
