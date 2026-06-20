@@ -277,9 +277,14 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
         }
 
         case "train_log": {
-          const epoch = Number(data.epoch ?? 0);
-          const loss = Number(data.loss ?? 0);
+          // Only plot points that actually carry a loss — train_log events also
+          // fire for eval / summary logs (no loss), which would otherwise inject
+          // a spurious 0 and drop the curve to the axis.
+          if (data.loss == null) break;
+          const loss = Number(data.loss);
+          if (!Number.isFinite(loss)) break;
 
+          const epoch = Number(data.epoch ?? 0);
           setTrainingMetrics((prev) => [...prev, { epoch, loss }]);
           break;
         }

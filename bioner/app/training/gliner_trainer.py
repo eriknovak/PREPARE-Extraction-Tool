@@ -804,7 +804,10 @@ class GLiNERFinetuner:
             per_device_train_batch_size=self.train_batch_size,
             report_to="none",
             logging_strategy="steps",
-            logging_steps=10,
+            # Log every step so the live loss curve populates promptly and densely
+            # rather than only every 10th step (which on small datasets meant the
+            # curve appeared late / barely at all).
+            logging_steps=1,
         )
 
         print("\nCHECK SAMPLE SPANS:")
@@ -899,17 +902,15 @@ class GLiNERFinetuner:
                 }
 
                 # forward ALL useful metrics safely
-                for key in [
-                    "loss",
-                    "grad_norm",
-                    "learning_rate",
-                    "eval_loss",
-                ]:
+                metric_keys = ["loss", "grad_norm", "learning_rate", "eval_loss"]
+                for key in metric_keys:
                     if key in logs and logs[key] is not None:
                         event[key] = float(logs[key])
 
-                # only emit if we actually have something useful
-                if len(event) > 2:
+                # Only emit when at least one real metric is present. The base event
+                # already carries 4 keys, so a length check is always true — guard on
+                # the metric keys instead so summary/empty logs don't stream a point.
+                if any(key in event for key in metric_keys):
                     finetuner._emit(event)
 
         trainer = _TrackingTrainer(
