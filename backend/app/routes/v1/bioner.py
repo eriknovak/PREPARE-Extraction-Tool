@@ -1187,10 +1187,29 @@ def dataset_runs_evaluations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
+    out = []
+
+    # Prepend the default extraction model as a baseline (run_id 0, not a real
+    # run) so trained runs can be compared against the starting point. Only
+    # included once it has been evaluated on this dataset's eval split.
+    baseline = training_service.get_baseline_model(db, dataset_id)
+    if baseline is not None:
+        baseline_per_label = _scores_only(
+            evaluation_service.get_per_label(db, baseline.id)
+        )
+        if baseline_per_label:
+            out.append(
+                {
+                    "run_id": 0,
+                    "name": "Base model",
+                    "is_baseline": True,
+                    "per_label": baseline_per_label,
+                }
+            )
+
     runs = db.exec(
         select(TrainingRun).where(TrainingRun.dataset_id == dataset_id)
     ).all()
-    out = []
     for r in runs:
         per_label = (
             _scores_only(evaluation_service.get_per_label(db, r.model_id))
