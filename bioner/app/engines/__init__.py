@@ -24,5 +24,5 @@ def build_engine(engine: str,
                                     device=device, 
                                     prompts_path=prompt_path)
     else:
-        raise ValueError(f"Unknown model type '{engine}'. Use 'gliner' or 'huggingface'.")
+        raise ValueError(f"Unknown model type '{engine}'. Use 'gliner', 'gliner2', or 'huggingface'.")
 __all__ = ["build_engine"]
