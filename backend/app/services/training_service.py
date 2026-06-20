@@ -163,6 +163,69 @@ def _ensure_model(db: Session, run: TrainingRun) -> Model:
     return model
 
 
+# Name marking the per-dataset baseline (default extraction model) Model row.
+BASELINE_MODEL_NAME = "Base model"
+
+
+def _ensure_baseline_model(db: Session, run: TrainingRun) -> Model:
+    """Return the dataset's baseline Model row, creating one if absent.
+
+    The baseline represents the default extraction model (the run's starting
+    weights). It is kept as its own per-dataset Model row — separate from
+    trained-run models and from the extraction default row — so its evaluation
+    can be refreshed per dataset without disturbing other models, and so it
+    survives deletion of individual runs.
+    """
+    existing = db.exec(
+        select(Model)
+        .where(Model.dataset_id == run.dataset_id)
+        .where(Model.name == BASELINE_MODEL_NAME)
+    ).first()
+    if existing is not None:
+        return existing
+    model = Model(
+        name=BASELINE_MODEL_NAME,
+        version="baseline",
+        base_model=run.base_model,
+        dataset_id=run.dataset_id,
+    )
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+    return model
+
+
+def get_baseline_model(db: Session, dataset_id: int) -> Optional[Model]:
+    """Return the dataset's baseline (default extraction model) row, if any."""
+    return db.exec(
+        select(Model)
+        .where(Model.dataset_id == dataset_id)
+        .where(Model.name == BASELINE_MODEL_NAME)
+    ).first()
+
+
+def record_baseline_evaluation(
+    db: Session, run_id: int, per_label: Dict[str, Dict[str, Any]]
+) -> None:
+    """Store the untrained base model's per-label evaluation as a dataset baseline.
+
+    Represents the default extraction model in the comparison dashboard so trained
+    runs can be compared against the starting point on the same eval split.
+
+    Args:
+        db (Session): Active DB session.
+        run_id (int): ID of the TrainingRun the baseline was evaluated for.
+        per_label (Dict[str, Dict[str, Any]]): Label -> metric mapping.
+    """
+    run = db.get(TrainingRun, run_id)
+    if run is None:
+        return
+    model = _ensure_baseline_model(db, run)
+    evaluation_service.store_evaluation(
+        db, model_id=model.id, dataset_id=run.dataset_id, per_label=per_label
+    )
+
+
 def record_evaluation(
     db: Session, run_id: int, per_label: Dict[str, Dict[str, Any]]
 ) -> None:

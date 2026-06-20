@@ -26,8 +26,8 @@ def _safe_float(value):
 async def receive_training_event(payload: dict, db: Session = Depends(get_session)):
     """Handle a training lifecycle event posted by the bioner trainer.
 
-    Recognized ``type`` values: training_info, epoch_update, evaluation_completed,
-    completed, stopped, error.
+    Recognized ``type`` values: training_info, epoch_update,
+    baseline_evaluation_completed, evaluation_completed, completed, stopped, error.
     """
     event_type = payload.get("type")
     run_id = payload.get("run_id")
@@ -44,6 +44,10 @@ async def receive_training_event(payload: dict, db: Session = Depends(get_sessio
             epoch_raw = payload.get("epoch")
             epoch = int(float(epoch_raw)) if epoch_raw is not None else 0
             training_service.add_epoch_metric(db, run_id, epoch=epoch, loss=loss)
+    elif event_type == "baseline_evaluation_completed":
+        metrics = payload.get("metrics") or {}
+        per_label = metrics.get("per_label") or {}
+        training_service.record_baseline_evaluation(db, run_id, per_label)
     elif event_type == "evaluation_completed":
         metrics = payload.get("metrics") or {}
         per_label = metrics.get("per_label") or {}

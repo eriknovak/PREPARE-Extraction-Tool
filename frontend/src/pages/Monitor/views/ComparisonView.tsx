@@ -102,7 +102,7 @@ const buildEvalComparison = (evaluations: EvaluationResponse[], metric: MetricMo
       if (!byLabel.has(norm)) byLabel.set(norm, readMetric(m, metric));
     });
     return {
-      name: `Run #${run.run_id}`,
+      name: run.name ?? `Run #${run.run_id}`,
       data: labels.map((l) => byLabel.get(l) ?? 0),
     };
   });

@@ -535,6 +535,11 @@ export interface PerLabelMetrics {
 /** Evaluation response for a single run. */
 export interface EvaluationResponse {
   run_id: number;
+  /** Display name for the entry; the default-model baseline uses "Base model".
+   * Falls back to `Run #<run_id>` when absent. */
+  name?: string;
+  /** True for the default-model baseline entry (run_id 0, not a real run). */
+  is_baseline?: boolean;
   per_label: { [label: string]: PerLabelMetrics };
 }
 

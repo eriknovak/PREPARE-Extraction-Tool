@@ -104,7 +104,7 @@ export const buildComparisonMatrix = (
     )
   ).sort();
 
-  const yLabels = evaluations.map((run) => `Run #${run.run_id}`);
+  const yLabels = evaluations.map((run) => run.name ?? `Run #${run.run_id}`);
 
   const cells: HeatmapCell[] = [];
   evaluations.forEach((run, y) => {

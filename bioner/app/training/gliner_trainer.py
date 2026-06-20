@@ -637,6 +637,13 @@ class GLiNERFinetuner:
             if ex.get("text") is None:
                 raise ValueError(f"Broken sample at {i}: text=None")
 
+        # Baseline: evaluate the untrained base model on the same eval split, so the
+        # comparison dashboard has a same-split reference point for the default
+        # extraction model (the run's starting weights). Best-effort — it runs
+        # inside this background training job and never blocks anything else.
+        if not self._stop_event.is_set():
+            self._run_baseline_evaluation(model, val_data, labels)
+
         try:
             trainer.train()
 
@@ -921,6 +928,28 @@ class GLiNERFinetuner:
         )
 
         return trainer
+
+    def _run_baseline_evaluation(
+        self, model, val_data: list[dict], labels: list[str]
+    ) -> None:
+        """Evaluate the untrained base model and emit a baseline result.
+
+        Gives the comparison dashboard a same-split reference point for the
+        default extraction model (the run's starting weights). Best-effort: any
+        failure is logged and swallowed so it can never abort the training run.
+        """
+        try:
+            metrics, _ = self.evaluate_model(model, val_data, labels)
+        except Exception as e:  # noqa: BLE001 - baseline must never break training
+            logger.exception(f"[BASELINE EVAL FAILED] run_id={self.run_id} error={e}")
+            return
+
+        self._emit({
+            "type": "baseline_evaluation_completed",
+            "run_id": self.run_id,
+            "base_model": self.base_model_path,
+            "metrics": {"per_label": metrics["per_label"]},
+        })
 
     def _run_evaluation(
         self,
