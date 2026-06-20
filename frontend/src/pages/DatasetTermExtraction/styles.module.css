@@ -73,6 +73,14 @@
   margin-bottom: 24px;
 }
 
+/* Top row: stat cards on the left, extraction-model selector on the right. */
+.stats-section__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .stats-section__grid {
   display: flex;
   gap: 12px;
@@ -84,23 +92,22 @@
   gap: 8px;
 }
 
-/* Extraction-model selector — its own row above the actions so it isn't
-   cramped alongside the stat cards and buttons. */
-.stats-section__model-row {
-  display: flex;
-}
-
+/* Extraction-model selector — inline label + dropdown, aligned to the right
+   of the top row alongside the stat cards. */
 .stats-section__model {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 320px;
-  max-width: 100%;
+  align-items: center;
+  gap: 8px;
 }
 
 .stats-section__model-label {
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: #6b7280;
+  white-space: nowrap;
+}
+
+.stats-section__model-select {
+  width: 260px;
 }
 
 /* Extraction Progress (inline with stats) */
