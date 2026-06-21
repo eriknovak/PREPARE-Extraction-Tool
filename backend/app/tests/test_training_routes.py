@@ -569,3 +569,68 @@ def test_training_start_sets_total_steps(client):
     assert run is not None
     assert run.train_stats is not None
     assert run.train_stats["total_steps"] == 200
+
+
+def test_start_training_reconciles_stale_run(client, monkeypatch):
+    """A 'running' run that bioner no longer tracks must not wedge new training."""
+    from app.services import training_service
+    import app.services.bioner_client as bioner_client_mod
+    from app.models_db import TrainingRun
+
+    stale = training_service.create_run(
+        client.session,
+        dataset_ids=[client.dataset_id],
+        base_model="urchade/gliner_multi-v2.1",
+        labels=["Drug"],
+        val_ratio=0.1,
+    )
+    training_service.mark_running(client.session, stale.id)
+
+    # bioner returns None (404 / unknown) -> the run is stale.
+    monkeypatch.setattr(bioner_client_mod, "get_training_status", lambda run_id: None)
+
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_id": client.dataset_id,
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_multi-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 200
+    client.session.expire_all()
+    assert client.session.get(TrainingRun, stale.id).status == "failed"
+
+
+def test_start_training_blocks_genuinely_active_run(client, monkeypatch):
+    """A run bioner confirms is still running must block a new run with 409."""
+    from app.services import training_service
+    import app.services.bioner_client as bioner_client_mod
+    from app.models_db import TrainingRun
+
+    active = training_service.create_run(
+        client.session,
+        dataset_ids=[client.dataset_id],
+        base_model="urchade/gliner_multi-v2.1",
+        labels=["Drug"],
+        val_ratio=0.1,
+    )
+    training_service.mark_running(client.session, active.id)
+
+    monkeypatch.setattr(
+        bioner_client_mod, "get_training_status", lambda run_id: {"status": "running"}
+    )
+
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_id": client.dataset_id,
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_multi-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 409
+    client.session.expire_all()
+    assert client.session.get(TrainingRun, active.id).status == "running"

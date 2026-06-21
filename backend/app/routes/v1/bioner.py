@@ -916,7 +916,25 @@ def start_training(
                 detail=f"Not authorized to access dataset {dsid}",
             )
 
-    # Reject a second concurrent run touching any of the training datasets.
+    # Reconcile stale "active" runs first: a run left in pending/running whose
+    # trainer is no longer alive on bioner (e.g. after a bioner restart or a
+    # crashed training thread) would otherwise wedge its datasets forever. Ask
+    # bioner whether each still-active run is genuinely running; mark the rest
+    # failed so a new run can start.
+    for run in training_service.get_active_runs_for_datasets(db, train_ids):
+        try:
+            snapshot = bioner_client.get_training_status(run.id)
+        except requests.RequestException:
+            # bioner unreachable -> can't confirm; leave the run active (the
+            # start call below will fail loudly if bioner is genuinely down).
+            continue
+        still_running = snapshot is not None and snapshot.get("status") == "running"
+        if not still_running:
+            training_service.fail_run(
+                db, run.id, "Stale run cleared: trainer was no longer running."
+            )
+
+    # Reject a second genuinely-concurrent run touching any of the datasets.
     if training_service.has_active_run_for_datasets(db, train_ids):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
