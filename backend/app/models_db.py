@@ -394,6 +394,10 @@ class TrainingMetric(SQLModel, table=True):
     )
     epoch: int
     loss: Optional[float] = Field(default=None)
+    # Step-indexed metrics for the live train/eval loss curve. ``step`` is the
+    # trainer global step; ``eval_loss`` is populated only on eval-step rows.
+    step: Optional[int] = Field(default=None, index=True)
+    eval_loss: Optional[float] = Field(default=None)
 
     run: Optional["TrainingRun"] = Relationship(back_populates="metrics")
 

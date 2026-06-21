@@ -61,9 +61,7 @@ def create_run(
         )
     for dsid in eval_dataset_ids or []:
         db.add(
-            TrainingRunDatasetLink(
-                training_run_id=run.id, dataset_id=dsid, role="eval"
-            )
+            TrainingRunDatasetLink(training_run_id=run.id, dataset_id=dsid, role="eval")
         )
     db.commit()
     return run
@@ -104,7 +102,9 @@ def mark_running(db: Session, run_id: int) -> None:
     db.commit()
 
 
-def add_epoch_metric(db: Session, run_id: int, epoch: int, loss: Optional[float]) -> None:
+def add_epoch_metric(
+    db: Session, run_id: int, epoch: int, loss: Optional[float]
+) -> None:
     """Append a per-epoch loss point.
 
     Args:
@@ -114,6 +114,28 @@ def add_epoch_metric(db: Session, run_id: int, epoch: int, loss: Optional[float]
         loss (Optional[float]): Training loss for this epoch.
     """
     db.add(TrainingMetric(run_id=run_id, epoch=epoch, loss=loss))
+    db.commit()
+
+
+def add_step_metric(
+    db: Session,
+    run_id: int,
+    *,
+    step: int,
+    epoch: int,
+    loss: Optional[float] = None,
+    eval_loss: Optional[float] = None,
+) -> None:
+    """Append a step-indexed metric point (train loss and/or eval loss).
+
+    Train-step rows carry ``loss``; eval-step rows carry ``eval_loss``. Either may
+    be None; the row is still written so the curve keeps step alignment.
+    """
+    db.add(
+        TrainingMetric(
+            run_id=run_id, epoch=epoch, step=step, loss=loss, eval_loss=eval_loss
+        )
+    )
     db.commit()
 
 
