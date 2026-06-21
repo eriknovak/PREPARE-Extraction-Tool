@@ -367,3 +367,28 @@ def test_delete_run(client):
     listing = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/runs")
     assert all(r["run_id"] != run.id for r in listing.json()["runs"])
     assert follow.status_code == 200
+
+
+def test_start_training_snapshots_train_stats(client):
+    """After POST /training/start the created run carries a populated train_stats."""
+    from app.models_db import TrainingRun
+
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_id": client.dataset_id,
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_small-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 200
+    run_id = resp.json()["run_id"]
+
+    db = client.session
+    db.expire_all()
+    run = db.get(TrainingRun, run_id)
+    assert run is not None
+    assert run.train_stats is not None
+    assert run.train_stats["record_count"] >= 1
+    assert client.dataset_id in run.train_stats["train_dataset_ids"]

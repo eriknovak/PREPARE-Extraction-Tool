@@ -24,6 +24,7 @@ def create_run(
     labels: List[str],
     val_ratio: float,
     eval_dataset_ids: Optional[List[int]] = None,
+    train_stats: Optional[dict] = None,
 ) -> TrainingRun:
     """Create a TrainingRun in the 'pending' state.
 
@@ -39,6 +40,8 @@ def create_run(
         val_ratio (float): Fraction of data held out for validation.
         eval_dataset_ids (Optional[List[int]]): Datasets to evaluate against
             instead of a held-out split (optional).
+        train_stats (Optional[dict]): Snapshot of dataset statistics at run
+            creation time (record/term counts, label distribution, etc.).
 
     Returns:
         TrainingRun: The newly created run.
@@ -49,6 +52,7 @@ def create_run(
         labels=labels,
         val_ratio=val_ratio,
         status="pending",
+        train_stats=train_stats,
     )
     db.add(run)
     db.commit()

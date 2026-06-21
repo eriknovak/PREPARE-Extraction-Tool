@@ -718,34 +718,20 @@ def _model_summary(db: Session, model: Model) -> ModelSummary:
 
 
 def resolve_active_model(db: Session) -> int:
-    """Activate the globally selected NER model on bioner and return the Model id
-    to record extracted terms under.
+    """Return the Model id to record extracted terms under, using the GLOBAL
+    active model. Ensures bioner is on the right model and returns its id.
 
-    When the global active model has an artifact path, bioner is asked to activate
-    it and that Model's id is returned. Otherwise bioner is reverted to its default
-    model and the default's Model row (looked up / created from ``/model/info``) is
-    used — preserving the original default behaviour. Raises 503 if bioner is
-    unreachable.
+    With a global selection there is no per-call swap in the hot path during a
+    job (the model was activated when it was selected), but we still confirm the
+    target here so a fresh worker / restart converges. Raises 503 if bioner is
+    unreachable when a default lookup is required.
     """
     model_db = training_service.get_global_active_model(db)
+    if model_db is not None and model_db.path:
+        return model_db.id
 
+    # Default model: record under the default's metadata row.
     try:
-        if model_db is not None and model_db.path:
-            resp = requests.post(
-                f"{settings.EXTRACT_HOST}/model/activate",
-                json={"model": model_db.path},
-                timeout=300,
-            )
-            resp.raise_for_status()
-            return model_db.id
-
-        # Default model: revert bioner and record under the default's metadata.
-        resp = requests.post(
-            f"{settings.EXTRACT_HOST}/model/activate",
-            json={"model": None},
-            timeout=300,
-        )
-        resp.raise_for_status()
         info = requests.get(f"{settings.EXTRACT_HOST}/model/info", timeout=30)
         info.raise_for_status()
         metadata = info.json()["model"]
@@ -876,6 +862,12 @@ def start_training(
             detail="A training run is already active for one of these datasets",
         )
 
+    train_stats_snapshot = {
+        "train_dataset_ids": train_ids,
+        "eval_dataset_ids": eval_ids,
+        **_compute_dataset_stats(db, train_ids),
+        "val_ratio": req.val_ratio,
+    }
     run = training_service.create_run(
         db,
         dataset_ids=train_ids,
@@ -883,6 +875,7 @@ def start_training(
         labels=req.labels,
         val_ratio=req.val_ratio,
         eval_dataset_ids=eval_ids,
+        train_stats=train_stats_snapshot,
     )
     try:
         training_data = gliner_data_service.load_reviewed_training_data(
@@ -925,6 +918,33 @@ def stop_training(
     return MessageOutput(message="stopped")
 
 
+def _compute_dataset_stats(db: Session, dataset_ids: list) -> dict:
+    """Compute aggregated stats across the given dataset IDs.
+
+    Returns a dict with ``record_count``, ``term_count``, and
+    ``label_distribution`` (label -> count mapping).
+    """
+    record_count = db.exec(
+        select(func.count(Record.id)).where(Record.dataset_id.in_(dataset_ids))
+    ).one()
+    term_count = db.exec(
+        select(func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id.in_(dataset_ids))
+    ).one()
+    rows = db.exec(
+        select(SourceTerm.label, func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id.in_(dataset_ids))
+        .group_by(SourceTerm.label)
+    ).all()
+    return {
+        "record_count": record_count,
+        "term_count": term_count,
+        "label_distribution": {label: count for label, count in rows},
+    }
+
+
 @router.get("/datasets/{dataset_id}/full-stats", response_model=FullStatsResponse)
 def full_stats(
     dataset_id: int,
@@ -959,25 +979,11 @@ def full_stats_multi(
     db: Session = Depends(get_session),
 ):
     """Aggregate record/term counts and label distribution across datasets."""
-    ids = req.dataset_ids
-    total_records = db.exec(
-        select(func.count(Record.id)).where(Record.dataset_id.in_(ids))
-    ).one()
-    total_terms = db.exec(
-        select(func.count(SourceTerm.id))
-        .join(Record, Record.id == SourceTerm.record_id)
-        .where(Record.dataset_id.in_(ids))
-    ).one()
-    rows = db.exec(
-        select(SourceTerm.label, func.count(SourceTerm.id))
-        .join(Record, Record.id == SourceTerm.record_id)
-        .where(Record.dataset_id.in_(ids))
-        .group_by(SourceTerm.label)
-    ).all()
+    stats = _compute_dataset_stats(db, req.dataset_ids)
     return FullStatsResponse(
-        totalRecords=total_records,
-        totalTerms=total_terms,
-        labelDistribution={label: count for label, count in rows},
+        totalRecords=stats["record_count"],
+        totalTerms=stats["term_count"],
+        labelDistribution=stats["label_distribution"],
     )
 
 
