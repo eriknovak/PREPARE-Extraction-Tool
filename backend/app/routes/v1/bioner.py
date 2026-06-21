@@ -48,6 +48,7 @@ from app.schemas import (
     TrainingStartResponse,
     create_pagination_metadata,
 )
+import app.services.extraction_lock as extraction_lock
 from app.services import (
     bioner_client,
     evaluation_service,
@@ -118,9 +119,9 @@ def extract_entities_from_record(
             message=f"Record {record_id} is reviewed; extraction skipped"
         )
 
-    # Activate the dataset's selected model (or default) and resolve its Model id
+    # Activate the globally selected model (or default) and resolve its Model id
     # up front so it can be used in the already-extracted check below.
-    model_id = resolve_active_model(dataset, db)
+    model_id = resolve_active_model(db)
 
     already_extracted_terms = db.exec(
         select(SourceTermEx)
@@ -332,8 +333,8 @@ def extract_entities_from_records(
     # TODO
     records_to_process = [r for r in records if not r.reviewed]
 
-    # Activate the dataset's selected model (or default) and resolve its Model id.
-    model_id = resolve_active_model(dataset, db)
+    # Activate the globally selected model (or default) and resolve its Model id.
+    model_id = resolve_active_model(db)
 
     # check if a job for this dataset and model already exists and is currently "used"
     existing_job = db.exec(
@@ -716,24 +717,20 @@ def _model_summary(db: Session, model: Model) -> ModelSummary:
     )
 
 
-def resolve_active_model(dataset: Dataset, db: Session) -> int:
-    """Activate the dataset's selected NER model on bioner and return the Model id
+def resolve_active_model(db: Session) -> int:
+    """Activate the globally selected NER model on bioner and return the Model id
     to record extracted terms under.
 
-    When the dataset has a selected model with an artifact path, bioner is asked
-    to activate it and that Model's id is returned. Otherwise bioner is reverted
-    to its default model and the default's Model row (looked up / created from
-    ``/model/info``) is used — preserving the original default behaviour. Raises
-    503 if bioner is unreachable.
+    When the global active model has an artifact path, bioner is asked to activate
+    it and that Model's id is returned. Otherwise bioner is reverted to its default
+    model and the default's Model row (looked up / created from ``/model/info``) is
+    used — preserving the original default behaviour. Raises 503 if bioner is
+    unreachable.
     """
-    model_db = None
-    if dataset.active_model_id is not None:
-        candidate = db.get(Model, dataset.active_model_id)
-        if candidate is not None and candidate.path:
-            model_db = candidate
+    model_db = training_service.get_global_active_model(db)
 
     try:
-        if model_db is not None:
+        if model_db is not None and model_db.path:
             resp = requests.post(
                 f"{settings.EXTRACT_HOST}/model/activate",
                 json={"model": model_db.path},
@@ -781,85 +778,66 @@ def list_models(
     return ModelsOutput(models=[_model_summary(db, m) for m in models])
 
 
-@router.get(
-    "/datasets/{dataset_id}/active-model", response_model=ActiveModelResponse
-)
-def get_dataset_active_model(
-    dataset_id: int,
+def _activate_on_bioner(model_path: Optional[str]) -> None:
+    """Hot-swap bioner to the given model path (None = revert to launch default)."""
+    try:
+        resp = requests.post(
+            f"{settings.EXTRACT_HOST}/model/activate",
+            json={"model": model_path},
+            timeout=300,
+        )
+        resp.raise_for_status()
+    except requests.RequestException:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extraction service unavailable",
+        )
+
+
+@router.get("/active-model", response_model=ActiveModelResponse)
+def get_active_model(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """Return the model the dataset uses for extraction (null = bioner default)."""
-    dataset = db.get(Dataset, dataset_id)
-    if dataset is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
-        )
-    if dataset.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this dataset",
-        )
-    active = None
-    if dataset.active_model_id is not None:
-        model = db.get(Model, dataset.active_model_id)
-        if model is not None:
-            active = _model_summary(db, model)
-    return ActiveModelResponse(dataset_id=dataset_id, active_model=active)
+    """Return the GLOBAL active extraction model (null = bioner default)."""
+    model = training_service.get_global_active_model(db)
+    active = _model_summary(db, model) if model is not None else None
+    return ActiveModelResponse(active_model=active)
 
 
-@router.post(
-    "/datasets/{dataset_id}/active-model", response_model=ActiveModelResponse
-)
-def set_dataset_active_model(
-    dataset_id: int,
+@router.post("/active-model", response_model=ActiveModelResponse)
+def set_active_model(
     payload: SetActiveModelRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """Set (``model_id``) or clear (``null``) the dataset's active extraction model."""
-    dataset = db.get(Dataset, dataset_id)
-    if dataset is None:
+    """Set/clear the GLOBAL active extraction model and hot-swap bioner.
+
+    Blocked (409) while any extraction job is active instance-wide so an in-flight
+    job's pinned model can't be undermined.
+    """
+    if extraction_lock.any_extraction_job_active(db):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
-        )
-    if dataset.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this dataset",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot change the model while an extraction job is running",
         )
 
     if payload.model_id is None:
-        dataset.active_model_id = None
-        db.add(dataset)
-        db.commit()
-        return ActiveModelResponse(dataset_id=dataset_id, active_model=None)
+        _activate_on_bioner(None)
+        training_service.set_global_active_model(db, None)
+        return ActiveModelResponse(active_model=None)
 
     model = db.get(Model, payload.model_id)
     if model is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
-        )
+        raise HTTPException(status_code=404, detail="Model not found")
     if model.path is None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail="Model has no trained artifact to use for extraction",
         )
-    # Authorize via the model's owning dataset.
-    if model.dataset_id is not None:
-        owner = db.get(Dataset, model.dataset_id)
-        if owner is not None and owner.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to use this model",
-            )
-
-    dataset.active_model_id = model.id
-    db.add(dataset)
-    db.commit()
-    return ActiveModelResponse(
-        dataset_id=dataset_id, active_model=_model_summary(db, model)
-    )
+    _activate_on_bioner(model.path)
+    training_service.set_global_active_model(db, model.id)
+    return ActiveModelResponse(active_model=_model_summary(db, model))
 
 
 # ================================================

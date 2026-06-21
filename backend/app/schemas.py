@@ -859,9 +859,8 @@ class ModelsOutput(BaseModel):
 
 
 class ActiveModelResponse(BaseModel):
-    """The model a dataset uses for extraction (null = bioner default)."""
+    """The globally selected extraction model (null = bioner default)."""
 
-    dataset_id: int
     active_model: Optional[ModelSummary] = None
 
 

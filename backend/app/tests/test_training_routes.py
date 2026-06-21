@@ -284,28 +284,32 @@ def test_list_models_returns_trained(client):
 
 
 def test_get_active_model_defaults_to_none(client):
-    resp = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/active-model")
+    resp = client.get("/api/v1/bioner/active-model")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["dataset_id"] == client.dataset_id
+    assert "dataset_id" not in body
     assert body["active_model"] is None
 
 
-def test_set_and_clear_active_model(client):
+def test_set_and_clear_active_model(client, monkeypatch):
+    import app.routes.v1.bioner as bioner_routes
+
+    monkeypatch.setattr(bioner_routes, "_activate_on_bioner", lambda *a, **k: None)
+
     model = _make_trained_model(client)
     # Set
     resp = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": model.id},
     )
     assert resp.status_code == 200
     assert resp.json()["active_model"]["id"] == model.id
     # Reflected by GET
-    got = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/active-model")
+    got = client.get("/api/v1/bioner/active-model")
     assert got.json()["active_model"]["id"] == model.id
     # Clear (null = default)
     cleared = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": None},
     )
     assert cleared.status_code == 200
@@ -321,7 +325,7 @@ def test_set_active_model_rejects_model_without_path(client):
     db.commit()
     db.refresh(model)
     resp = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": model.id},
     )
     assert resp.status_code == 400
@@ -329,10 +333,20 @@ def test_set_active_model_rejects_model_without_path(client):
 
 def test_set_active_model_rejects_missing_model(client):
     resp = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": 999999},
     )
     assert resp.status_code == 404
+
+
+def test_set_active_model_blocked_during_extraction(client, monkeypatch):
+    import app.routes.v1.bioner as bioner_routes
+
+    monkeypatch.setattr(
+        bioner_routes.extraction_lock, "any_extraction_job_active", lambda db: True
+    )
+    resp = client.post("/api/v1/bioner/active-model", json={"model_id": None})
+    assert resp.status_code == 409
 
 
 def test_delete_run(client):
