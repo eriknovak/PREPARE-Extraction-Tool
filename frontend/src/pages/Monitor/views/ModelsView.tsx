@@ -304,8 +304,15 @@ const ModelsView = () => {
         await setActiveModel(next);
         await reloadModels();
         toast.showToast("Active model updated", "success");
-      } catch {
-        toast.showToast("Cannot change the model while an extraction job is running", "error");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "";
+        const isConflict =
+          msg === "Cannot change the model while an extraction job is running" ||
+          msg.startsWith("HTTP 409");
+        toast.showToast(
+          isConflict ? "Cannot change the model while an extraction job is running" : "Failed to set the active model",
+          "error"
+        );
       }
     },
     [reloadModels, toast]

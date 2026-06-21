@@ -124,8 +124,11 @@ def extract_entities_from_record(
             message=f"Record {record_id} is reviewed; extraction skipped"
         )
 
-    # Activate the globally selected model (or default) and resolve its Model id
-    # up front so it can be used in the already-extracted check below.
+    # Resolve the active model id (DB-only for a global selection; queries bioner
+    # for the default). Note: this route does NOT create an ExtractionJob, so it
+    # is outside the extraction-active lock (which only inspects ExtractionJob
+    # rows). That is an accepted limitation — single-record extraction is
+    # synchronous and short-lived; the lock covers batch jobs only.
     model_id = resolve_active_model(db)
 
     already_extracted_terms = db.exec(
@@ -718,12 +721,17 @@ def _model_summary(db: Session, model: Model) -> ModelSummary:
 
 def resolve_active_model(db: Session) -> int:
     """Return the Model id to record extracted terms under, using the GLOBAL
-    active model. Ensures bioner is on the right model and returns its id.
+    active model.
 
-    With a global selection there is no per-call swap in the hot path during a
-    job (the model was activated when it was selected), but we still confirm the
-    target here so a fresh worker / restart converges. Raises 503 if bioner is
-    unreachable when a default lookup is required.
+    - Globally-selected model (has a path): returns that model's id directly,
+      with NO per-call bioner activation. Activation already happened when the
+      model was selected via POST /bioner/active-model, so this is a fast
+      DB-only lookup in the hot path.
+      Known limitation: if the bioner container restarts it reverts to its
+      launch default until a model is re-selected in Monitor.
+    - Default model (no global selection): queries bioner /model/info to
+      identify the currently-loaded model and upserts its metadata row.
+      Raises 503 if bioner is unreachable.
     """
     model_db = training_service.get_global_active_model(db)
     if model_db is not None and model_db.path:
