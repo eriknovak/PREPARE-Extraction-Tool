@@ -398,6 +398,43 @@ def has_active_run_for_datasets(db: Session, dataset_ids: List[int]) -> bool:
     return active is not None
 
 
+def get_active_runs_for_datasets(
+    db: Session, dataset_ids: List[int]
+) -> List[TrainingRun]:
+    """Return the active (pending/running) runs training on any of the datasets.
+
+    Deduplicated by run id (a multi-dataset run links several datasets). Used to
+    reconcile stale runs — those whose trainer is no longer alive — before
+    blocking a new run.
+
+    Args:
+        db (Session): Active DB session.
+        dataset_ids (List[int]): Datasets to check.
+
+    Returns:
+        List[TrainingRun]: The matching active runs (possibly empty).
+    """
+    if not dataset_ids:
+        return []
+    runs = db.exec(
+        select(TrainingRun)
+        .join(
+            TrainingRunDatasetLink,
+            TrainingRunDatasetLink.training_run_id == TrainingRun.id,
+        )
+        .where(TrainingRunDatasetLink.role == "train")
+        .where(TrainingRunDatasetLink.dataset_id.in_(dataset_ids))
+        .where(TrainingRun.status.in_(["pending", "running"]))
+    ).all()
+    seen: set = set()
+    unique: List[TrainingRun] = []
+    for run in runs:
+        if run.id not in seen:
+            seen.add(run.id)
+            unique.append(run)
+    return unique
+
+
 def update_run(
     db: Session,
     run_id: int,
