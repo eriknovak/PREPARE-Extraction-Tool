@@ -9,7 +9,7 @@ export type MonitorView = "models" | "training";
 
 /**
  * The shared Monitor contract. Both `index.tsx` and the view components
- * (ComparisonView / TrainingView) consume this via `useMonitor()`. The shape is
+ * (ModelsView / TrainingView) consume this via `useMonitor()`. The shape is
  * frozen so the views can be developed independently against it.
  */
 export interface MonitorContextValue {

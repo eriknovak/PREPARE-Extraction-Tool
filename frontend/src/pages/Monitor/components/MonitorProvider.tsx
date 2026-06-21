@@ -96,6 +96,9 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     setTrainingStatus("");
     setSelectedLabels([]);
     setEvaluations([]);
+    setProgress(0);
+    setCurrentStep(0);
+    setTotalSteps(0);
   };
 
   // ------------------ DATASETS ------------------
@@ -282,17 +285,23 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
         case "completed":
           setIsTraining(false);
           setTrainingStatus(`Completed — saved to ${data.output_path ?? "unknown"}`);
+          setCurrentStep(0);
+          setTotalSteps(0);
           break;
 
         case "stopped":
           setIsTraining(false);
           setTrainingStatus("Training stopped.");
           setProgress(0);
+          setCurrentStep(0);
+          setTotalSteps(0);
           break;
 
         case "error":
           setIsTraining(false);
           setTrainingStatus(`Error: ${data.message}`);
+          setCurrentStep(0);
+          setTotalSteps(0);
           showAlert({ message: data.message, suggestion: data.suggestion }, "error");
           break;
       }

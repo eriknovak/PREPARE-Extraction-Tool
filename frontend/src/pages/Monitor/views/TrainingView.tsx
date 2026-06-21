@@ -135,6 +135,7 @@ const TrainingView = () => {
           <label className={styles.field__label} htmlFor="base-model-select">Base model</label>
 
           <Select
+            id="base-model-select"
             value={useCustomModel ? "custom" : baseModel}
             onValueChange={(v) => {
               if (v === "custom") {
