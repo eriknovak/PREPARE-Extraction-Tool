@@ -17,18 +17,16 @@ const MonitorHeader = () => {
           <FontAwesomeIcon icon={faCircleQuestion} className={styles["info-tooltip__icon"]} />
           <span className={styles["info-tooltip__content"]}>
             <strong>Monitoring Dashboard</strong>
-            <p>
-              Train custom NER models and compare their performance. Pick a dataset, then switch
-              between:
-            </p>
+            <p>Train custom NER models and pick which one is used for extraction. Switch between:</p>
             <ul>
               <li>
-                <strong>Comparison</strong> — compare runs by loss, evaluation metrics, and a
-                runs × labels heatmap, and inspect a single model in detail.
+                <strong>Models</strong> — browse trained models, inspect each one's training loss and
+                per-label evaluation, and select the global model used for extraction.
               </li>
               <li>
-                <strong>Training</strong> — configure the train/eval split and base model, then
-                launch a run and follow its live progress.
+                <strong>Training</strong> — choose training datasets and labels, configure the base
+                model and hyperparameters, then launch a run and follow its live loss and evaluation
+                curves.
               </li>
             </ul>
           </span>

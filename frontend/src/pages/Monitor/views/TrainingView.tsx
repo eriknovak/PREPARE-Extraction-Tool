@@ -67,7 +67,6 @@ const TrainingView = () => {
     trainingStatus,
     startTraining,
     stopTraining,
-    runs,
   } = useMonitor();
 
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -254,7 +253,7 @@ const TrainingView = () => {
           )}
         </div>
 
-        <TrainingLossChart metrics={trainingMetrics} isTraining={isTraining} hasRuns={runs.length > 0} />
+        <TrainingLossChart metrics={trainingMetrics} isTraining={isTraining} />
       </Card>
     </div>
   );

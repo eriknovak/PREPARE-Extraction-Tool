@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 
 import type { useToast } from "@hooks/useToast";
-import type { EvaluationResponse, MonitorDataset, MonitorDatasetStats, MonitorRun, TrainingMetric } from "types";
+import type { MonitorDataset, MonitorDatasetStats, TrainingMetric } from "types";
 
 export const DEFAULT_MODEL = "urchade/gliner_multi-v2.1";
 
@@ -19,21 +19,8 @@ export interface MonitorContextValue {
 
   // ── datasets ──
   datasets: MonitorDataset[];
-  selectedDatasetId: number | null;
-  selectDataset: (id: number) => void;
   /** Aggregated stats across the selected TRAINING datasets. */
   trainingStats: MonitorDatasetStats | null;
-
-  // ── runs ──
-  runs: MonitorRun[];
-  selectedRun: number | null;
-  setSelectedRun: (id: number | null) => void;
-
-  // ── evaluations ──
-  evaluation: EvaluationResponse | null;
-  evaluationLoading: boolean;
-  evaluations: EvaluationResponse[];
-  evaluationsLoading: boolean;
 
   // ── training state ──
   isTraining: boolean;
