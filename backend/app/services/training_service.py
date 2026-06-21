@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from app.models_db import (
+    AppSettings,
     Model,
     ModelTrainRecordLink,
     TrainingMetric,
@@ -23,6 +24,7 @@ def create_run(
     labels: List[str],
     val_ratio: float,
     eval_dataset_ids: Optional[List[int]] = None,
+    train_stats: Optional[dict] = None,
 ) -> TrainingRun:
     """Create a TrainingRun in the 'pending' state.
 
@@ -38,6 +40,8 @@ def create_run(
         val_ratio (float): Fraction of data held out for validation.
         eval_dataset_ids (Optional[List[int]]): Datasets to evaluate against
             instead of a held-out split (optional).
+        train_stats (Optional[dict]): Snapshot of dataset statistics at run
+            creation time (record/term counts, label distribution, etc.).
 
     Returns:
         TrainingRun: The newly created run.
@@ -48,6 +52,7 @@ def create_run(
         labels=labels,
         val_ratio=val_ratio,
         status="pending",
+        train_stats=train_stats,
     )
     db.add(run)
     db.commit()
@@ -61,9 +66,7 @@ def create_run(
         )
     for dsid in eval_dataset_ids or []:
         db.add(
-            TrainingRunDatasetLink(
-                training_run_id=run.id, dataset_id=dsid, role="eval"
-            )
+            TrainingRunDatasetLink(training_run_id=run.id, dataset_id=dsid, role="eval")
         )
     db.commit()
     return run
@@ -104,7 +107,9 @@ def mark_running(db: Session, run_id: int) -> None:
     db.commit()
 
 
-def add_epoch_metric(db: Session, run_id: int, epoch: int, loss: Optional[float]) -> None:
+def add_epoch_metric(
+    db: Session, run_id: int, epoch: int, loss: Optional[float]
+) -> None:
     """Append a per-epoch loss point.
 
     Args:
@@ -114,6 +119,40 @@ def add_epoch_metric(db: Session, run_id: int, epoch: int, loss: Optional[float]
         loss (Optional[float]): Training loss for this epoch.
     """
     db.add(TrainingMetric(run_id=run_id, epoch=epoch, loss=loss))
+    db.commit()
+
+
+def add_step_metric(
+    db: Session,
+    run_id: int,
+    *,
+    step: int,
+    epoch: int,
+    loss: Optional[float] = None,
+    eval_loss: Optional[float] = None,
+) -> None:
+    """Append a step-indexed metric point (train loss and/or eval loss).
+
+    Train-step rows carry ``loss``; eval-step rows carry ``eval_loss``. Either may
+    be None; the row is still written so the curve keeps step alignment.
+    """
+    db.add(
+        TrainingMetric(
+            run_id=run_id, epoch=epoch, step=step, loss=loss, eval_loss=eval_loss
+        )
+    )
+    db.commit()
+
+
+def set_total_steps(db: Session, run_id: int, total_steps: int) -> None:
+    """Record total optimizer steps on the run (under train_stats) for progress %."""
+    run = db.get(TrainingRun, run_id)
+    if run is None:
+        return
+    stats = dict(run.train_stats or {})
+    stats["total_steps"] = total_steps
+    run.train_stats = stats
+    db.add(run)
     db.commit()
 
 
@@ -402,6 +441,35 @@ def update_run(
     db.commit()
     db.refresh(run)
     return run
+
+
+def get_app_settings(db: Session) -> AppSettings:
+    """Return the singleton AppSettings row (id=1), creating it if missing."""
+    settings_row = db.get(AppSettings, 1)
+    if settings_row is None:
+        settings_row = AppSettings(id=1, active_model_id=None)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+def get_global_active_model(db: Session) -> Optional[Model]:
+    """Return the globally selected extraction Model, or None (= bioner default)."""
+    row = get_app_settings(db)
+    if row.active_model_id is None:
+        return None
+    return db.get(Model, row.active_model_id)
+
+
+def set_global_active_model(db: Session, model_id: Optional[int]) -> AppSettings:
+    """Set or clear the global active extraction model."""
+    row = get_app_settings(db)
+    row.active_model_id = model_id
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def delete_run(db: Session, run_id: int) -> bool:

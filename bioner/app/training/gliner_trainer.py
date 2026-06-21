@@ -1,6 +1,7 @@
 import gc
 import json
 import logging
+import math
 import os
 import random
 import threading
@@ -68,7 +69,9 @@ def _error_snippet(text: str, start: int, end: int) -> tuple[str, int, int]:
     return snippet, start + offset, end + offset
 
 
-def _error_example(text: str, gold: Optional[Entity], predicted: Optional[Entity]) -> dict:
+def _error_example(
+    text: str, gold: Optional[Entity], predicted: Optional[Entity]
+) -> dict:
     """Build a single bounded error example with a snippet centred on the span.
 
     Exactly one of ``gold`` / ``predicted`` is set: a missed gold span (false
@@ -81,7 +84,12 @@ def _error_example(text: str, gold: Optional[Entity], predicted: Optional[Entity
     def _span(ent: Optional[Entity], new_start: int, new_end: int) -> Optional[dict]:
         if ent is None:
             return None
-        return {"text": ent.text, "start": new_start, "end": new_end, "label": ent.label}
+        return {
+            "text": ent.text,
+            "start": new_start,
+            "end": new_end,
+            "label": ent.label,
+        }
 
     return {
         "text": snippet,
@@ -93,7 +101,7 @@ def _error_example(text: str, gold: Optional[Entity], predicted: Optional[Entity
 def gliner_to_entities(text: str, preds: list[dict]) -> list[Entity]:
     return [
         Entity(
-            text=text[p["start"]:p["end"]],
+            text=text[p["start"] : p["end"]],
             start=p["start"],
             end=p["end"],
             label=p["label"],
@@ -145,10 +153,7 @@ def convert_to_gliner_format(data: list[dict]) -> list[dict]:
 
         # only keep valid samples
         if ner:
-            converted.append({
-                "text": text,
-                "ner": ner
-            })
+            converted.append({"text": text, "ner": ner})
 
     return converted
 
@@ -230,6 +235,19 @@ class GLiNERFinetuner:
         self._stop_event.set()
 
     # -----------------------------
+    # STEP MATH HELPERS
+    # -----------------------------
+    def _compute_total_steps(self, train_size: int) -> int:
+        """Total optimizer steps = ceil(train_size / batch) * epochs (>=1)."""
+        steps_per_epoch = max(1, math.ceil(train_size / max(1, self.train_batch_size)))
+        return max(1, steps_per_epoch * self.num_epochs)
+
+    def _compute_eval_steps(self, total_steps: int) -> int:
+        """Eval interval targeting ~18 eval points across the run (>=1)."""
+        TARGET_POINTS = 18
+        return max(1, total_steps // TARGET_POINTS)
+
+    # -----------------------------
     # STATUS (thread-safe)
     # -----------------------------
     def _set_status(self, status: str) -> None:
@@ -270,11 +288,7 @@ class GLiNERFinetuner:
 
         def _send():
             try:
-                response = requests.post(
-                    CALLBACK_URL,
-                    json=event,
-                    timeout=3
-                )
+                response = requests.post(CALLBACK_URL, json=event, timeout=3)
 
                 logger.info(
                     f"[CALLBACK SENT] "
@@ -284,10 +298,9 @@ class GLiNERFinetuner:
 
             except Exception as e:
                 logger.exception(
-                    f"[CALLBACK FAILED] "
-                    f"type={event.get('type')} "
-                    f"error={e}"
+                    f"[CALLBACK FAILED] type={event.get('type')} error={e}"
                 )
+
         threading.Thread(target=_send, daemon=True).start()
 
     # -----------------------------
@@ -299,18 +312,17 @@ class GLiNERFinetuner:
         try:
             self._do_train()
         except Exception as e:
-            logger.error(
-                f"Training run {self.run_id} failed: {e}",
-                exc_info=True
-            )
+            logger.error(f"Training run {self.run_id} failed: {e}", exc_info=True)
             self._set_status("failed")
             self._error = str(e)
 
-            self._emit({
-                "type": "error",
-                "run_id": self.run_id,
-                "message": str(e),
-            })
+            self._emit(
+                {
+                    "type": "error",
+                    "run_id": self.run_id,
+                    "message": str(e),
+                }
+            )
 
         finally:
             gc.collect()
@@ -377,21 +389,29 @@ class GLiNERFinetuner:
                 for ent in ner:
                     if isinstance(ent, (list, tuple)) and len(ent) == 3:
                         start_tok, end_tok, label = ent
-                        if isinstance(start_tok, int) and isinstance(end_tok, int) and isinstance(label, str):
+                        if (
+                            isinstance(start_tok, int)
+                            and isinstance(end_tok, int)
+                            and isinstance(label, str)
+                        ):
                             # Token indices are already correct, just validate bounds
                             if 0 <= start_tok <= end_tok < len(tokenized_text):
                                 valid_ner.append([start_tok, end_tok + 1, label])
                                 char_start = token_char_starts[start_tok]
-                                char_end = token_char_starts[end_tok] + len(tokens[end_tok])
+                                char_end = token_char_starts[end_tok] + len(
+                                    tokens[end_tok]
+                                )
                                 valid_ner_char.append([char_start, char_end, label])
 
                 if valid_ner:
-                    cleaned_data.append({
-                        "text": text,
-                        "tokenized_text": tokens,
-                        "ner": valid_ner,
-                        "ner_char": valid_ner_char,
-                    })
+                    cleaned_data.append(
+                        {
+                            "text": text,
+                            "tokenized_text": tokens,
+                            "ner": valid_ner,
+                            "ner_char": valid_ner_char,
+                        }
+                    )
                 continue
 
             # FALLBACK: Old format with "entities" field (character-based)
@@ -435,10 +455,7 @@ class GLiNERFinetuner:
                 ner.append([start, end, label])
 
             if ner:
-                cleaned_data.append({
-                    "text": text,
-                    "ner": ner
-                })
+                cleaned_data.append({"text": text, "ner": ner})
 
         return cleaned_data
 
@@ -537,7 +554,9 @@ class GLiNERFinetuner:
             fn_count = 0
             fp_examples: list[dict] = []
             fn_examples: list[dict] = []
-            for sample, gold_ents, pred_ents in zip(evaluation_samples, true_entities, pred_entities):
+            for sample, gold_ents, pred_ents in zip(
+                evaluation_samples, true_entities, pred_entities
+            ):
                 false_positives, false_negatives = metric_engine.sentence_errors(
                     gold_ents, pred_ents, match_type="relaxed", label=label
                 )
@@ -545,10 +564,14 @@ class GLiNERFinetuner:
                 fn_count += len(false_negatives)
                 for ent in false_negatives:
                     if len(fn_examples) < MAX_ERROR_EXAMPLES_PER_KIND:
-                        fn_examples.append(_error_example(sample["text"], gold=ent, predicted=None))
+                        fn_examples.append(
+                            _error_example(sample["text"], gold=ent, predicted=None)
+                        )
                 for ent in false_positives:
                     if len(fp_examples) < MAX_ERROR_EXAMPLES_PER_KIND:
-                        fp_examples.append(_error_example(sample["text"], gold=None, predicted=ent))
+                        fp_examples.append(
+                            _error_example(sample["text"], gold=None, predicted=ent)
+                        )
 
             per_label[label] = {
                 "exact_f1": round(exact_f1, 4),
@@ -586,11 +609,13 @@ class GLiNERFinetuner:
         if not self.training_data:
             raise ValueError("No training examples provided")
 
-        self._emit({
-            "type": "training_info",
-            "run_id": self.run_id,
-            "train_size": len(self.training_data),
-        })
+        self._emit(
+            {
+                "type": "training_info",
+                "run_id": self.run_id,
+                "train_size": len(self.training_data),
+            }
+        )
 
         print("\n" + "=" * 80)
         print(f"[GLINER TRAINER] RUN ID: {self.run_id}")
@@ -605,10 +630,12 @@ class GLiNERFinetuner:
 
         if self._stop_event.is_set():
             self._set_status("stopped")
-            self._emit({
-                "type": "stopped",
-                "run_id": self.run_id,
-            })
+            self._emit(
+                {
+                    "type": "stopped",
+                    "run_id": self.run_id,
+                }
+            )
             return
 
         cleaned_data, cleaned_eval = self._prepare_cleaned_data()
@@ -619,19 +646,22 @@ class GLiNERFinetuner:
             cleaned_data, cleaned_eval
         )
 
-        train_ds, collator, args, labels = self._build_training_components(
-            model, cleaned_data, train_data, val_data
+        train_ds, eval_ds, collator, args, labels, total_steps = (
+            self._build_training_components(model, cleaned_data, train_data, val_data)
         )
 
-        trainer = self._build_trainer(model, args, train_ds, collator)
+        trainer = self._build_trainer(model, args, train_ds, eval_ds, collator)
 
         print("CALLBACKS:", trainer.callback_handler.callbacks)
 
-        self._emit({
-            "type": "training_start",
-            "run_id": self.run_id,
-            "num_epochs": self.num_epochs,
-        })
+        self._emit(
+            {
+                "type": "training_start",
+                "run_id": self.run_id,
+                "num_epochs": self.num_epochs,
+                "total_steps": total_steps,
+            }
+        )
 
         for i, ex in enumerate(train_ds):
             if ex.get("text") is None:
@@ -653,10 +683,12 @@ class GLiNERFinetuner:
 
         except KeyboardInterrupt:
             self._set_status("stopped")
-            self._emit({
-                "type": "stopped",
-                "run_id": self.run_id,
-            })
+            self._emit(
+                {
+                    "type": "stopped",
+                    "run_id": self.run_id,
+                }
+            )
             return
 
         if self._stop_event.is_set():
@@ -709,7 +741,9 @@ class GLiNERFinetuner:
         data_output_dir.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        cleaned_data_file = data_output_dir / f"cleaned_training_data_run{self.run_id}_{timestamp}.json"
+        cleaned_data_file = (
+            data_output_dir / f"cleaned_training_data_run{self.run_id}_{timestamp}.json"
+        )
 
         with open(cleaned_data_file, "w", encoding="utf-8") as f:
             json.dump(cleaned_data, f, indent=2, ensure_ascii=False)
@@ -766,15 +800,23 @@ class GLiNERFinetuner:
         cleaned_data: list[dict],
         train_data: list[dict],
         val_data: list[dict],
-    ) -> tuple[GLiNERDataset, DataCollator, TrainingArguments, list[str]]:
-        """Build the train dataset, collator, training args, and eval labels.
+    ) -> tuple[
+        GLiNERDataset,
+        "GLiNERDataset | None",
+        DataCollator,
+        TrainingArguments,
+        list[str],
+        int,
+    ]:
+        """Build the train dataset, eval dataset, collator, training args, eval labels, and total steps.
 
         Also runs lightweight sample/span sanity checks before training.
 
         Returns:
-            tuple: ``(train_ds, collator, args, labels)``.
+            tuple: ``(train_ds, eval_ds, collator, args, labels, total_steps)``.
         """
         train_ds = GLiNERDataset(train_data)
+        eval_ds = GLiNERDataset(val_data) if val_data else None
         # Eval reads gold spans from the raw items (which carry `ner_char`);
         # GLiNERDataset.__getitem__ would strip that key, so pass `val_data`.
 
@@ -800,6 +842,17 @@ class GLiNERFinetuner:
         print(f"\nSAVING MODEL TRAINING FILE TO: {output_dir}\n")
         print("Current working dir:", os.getcwd())
 
+        total_steps = self._compute_total_steps(len(train_data))
+        eval_steps = self._compute_eval_steps(total_steps)
+
+        eval_kwargs: dict = {}
+        if eval_ds is not None:
+            eval_kwargs = dict(
+                eval_strategy="steps",
+                eval_steps=eval_steps,
+                per_device_eval_batch_size=self.train_batch_size,
+            )
+
         args = TrainingArguments(
             output_dir=output_dir,
             num_train_epochs=self.num_epochs,
@@ -815,6 +868,7 @@ class GLiNERFinetuner:
             # rather than only every 10th step (which on small datasets meant the
             # curve appeared late / barely at all).
             logging_steps=1,
+            **eval_kwargs,
         )
 
         print("\nCHECK SAMPLE SPANS:")
@@ -829,7 +883,9 @@ class GLiNERFinetuner:
                     assert 0 <= start <= end <= len(tokenized_text), (
                         f"Token index out of bounds: [{start}:{end}] for {len(tokenized_text)} tokens"
                     )
-                    assert start < end, f"Invalid token span: start={start} must be < end={end}"
+                    assert start < end, (
+                        f"Invalid token span: start={start} must be < end={end}"
+                    )
             else:
                 # Character indices - validate span is not empty
                 for start, end, label in item["ner"]:
@@ -838,33 +894,29 @@ class GLiNERFinetuner:
 
         # Derive eval labels from the train+val union so labels that appear only
         # in the validation/eval split are still scored.
-        labels = list(set(
-            e[2]
-            for item in [*train_data, *val_data]
-            for e in item["ner"]
-        ))
+        labels = list(
+            set(e[2] for item in [*train_data, *val_data] for e in item["ner"])
+        )
         print("labels:", labels)
 
-        return train_ds, collator, args, labels
+        return train_ds, eval_ds, collator, args, labels, total_steps
 
-    def _build_trainer(self, model, args, train_ds, collator):
+    def _build_trainer(self, model, args, train_ds, eval_ds, collator):
         """Build the tracking GLiNER trainer wired to this finetuner's events."""
         finetuner = self
 
         class ProgressCallback(TrainerCallback):
             def on_epoch_end(self, args, state, control, **kwargs):
-                finetuner._emit({
-                    "type": "epoch_update",
-                    "run_id": finetuner.run_id,
-                    "epoch": float(state.epoch or 0),
-                })
+                finetuner._emit(
+                    {
+                        "type": "epoch_update",
+                        "run_id": finetuner.run_id,
+                        "epoch": float(state.epoch or 0),
+                    }
+                )
 
             def on_log(self, args, state, control, logs=None, **kwargs):
-                logger.info(
-                    f"[ON_LOG FIRED] "
-                    f"epoch={state.epoch} "
-                    f"logs={logs}"
-                )
+                logger.info(f"[ON_LOG FIRED] epoch={state.epoch} logs={logs}")
                 if not logs:
                     return
 
@@ -880,7 +932,6 @@ class GLiNERFinetuner:
                 finetuner._emit(event)
 
         class _TrackingTrainer(Trainer):
-
             def training_step(self, model, inputs, num_items_in_batch=None):
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
@@ -924,6 +975,7 @@ class GLiNERFinetuner:
             model=model,
             args=args,
             train_dataset=train_ds,
+            eval_dataset=eval_ds,
             data_collator=collator,
             callbacks=[ProgressCallback()],
         )
@@ -945,12 +997,14 @@ class GLiNERFinetuner:
             logger.exception(f"[BASELINE EVAL FAILED] run_id={self.run_id} error={e}")
             return
 
-        self._emit({
-            "type": "baseline_evaluation_completed",
-            "run_id": self.run_id,
-            "base_model": self.base_model_path,
-            "metrics": {"per_label": metrics["per_label"]},
-        })
+        self._emit(
+            {
+                "type": "baseline_evaluation_completed",
+                "run_id": self.run_id,
+                "base_model": self.base_model_path,
+                "metrics": {"per_label": metrics["per_label"]},
+            }
+        )
 
     def _run_evaluation(
         self,
@@ -974,7 +1028,9 @@ class GLiNERFinetuner:
 
         eval_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        evaluation_file = eval_output_dir / f"evaluation_run{self.run_id}_{eval_timestamp}.json"
+        evaluation_file = (
+            eval_output_dir / f"evaluation_run{self.run_id}_{eval_timestamp}.json"
+        )
 
         evaluation_payload = {
             "run_id": self.run_id,
@@ -1008,11 +1064,13 @@ class GLiNERFinetuner:
             print(f"  precision  : {scores['precision']:.4f}")
             print(f"  recall     : {scores['recall']:.4f}\n")
 
-        self._emit({
-            "type": "evaluation_completed",
-            "run_id": self.run_id,
-            "metrics": {"per_label": metrics["per_label"]},
-        })
+        self._emit(
+            {
+                "type": "evaluation_completed",
+                "run_id": self.run_id,
+                "metrics": {"per_label": metrics["per_label"]},
+            }
+        )
 
     def _save_model(self, model) -> None:
         """Persist the trained model to the shared models library and emit events."""
@@ -1046,16 +1104,20 @@ class GLiNERFinetuner:
         self._output_path = str(output_path)
         self._set_status("completed")
 
-        self._emit({
-            "type": "model_saved",
-            "run_id": self.run_id,
-            "output_path": str(output_path),
-            "base_model": self.base_model_path,
-            "engine": "gliner",
-        })
+        self._emit(
+            {
+                "type": "model_saved",
+                "run_id": self.run_id,
+                "output_path": str(output_path),
+                "base_model": self.base_model_path,
+                "engine": "gliner",
+            }
+        )
 
-        self._emit({
-            "type": "completed",
-            "run_id": self.run_id,
-            "output_path": str(output_path),
-        })
+        self._emit(
+            {
+                "type": "completed",
+                "run_id": self.run_id,
+                "output_path": str(output_path),
+            }
+        )

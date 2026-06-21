@@ -34,8 +34,24 @@ async def receive_training_event(payload: dict, db: Session = Depends(get_sessio
     if not run_id:
         return {"ok": False, "error": "missing run_id"}
 
-    if event_type == "training_info":
+    if event_type in ("training_info", "training_start"):
         training_service.mark_running(db, run_id)
+        total_steps = payload.get("total_steps")
+        if total_steps is not None:
+            training_service.set_total_steps(db, run_id, int(total_steps))
+    elif event_type == "train_log":
+        step = payload.get("step")
+        if step is not None:
+            epoch_raw = payload.get("epoch")
+            epoch = int(float(epoch_raw)) if epoch_raw is not None else 0
+            training_service.add_step_metric(
+                db,
+                run_id,
+                step=int(step),
+                epoch=epoch,
+                loss=_safe_float(payload.get("loss")),
+                eval_loss=_safe_float(payload.get("eval_loss")),
+            )
     elif event_type == "epoch_update":
         # Only persist points that carry a loss value; loss-less epoch-boundary
         # ticks are still broadcast below for the live UI.
@@ -63,9 +79,7 @@ async def receive_training_event(payload: dict, db: Session = Depends(get_sessio
             ) or [run.dataset_id]
             record_ids = list(
                 db.exec(
-                    select(Record.id).where(
-                        Record.dataset_id.in_(train_dataset_ids)
-                    )
+                    select(Record.id).where(Record.dataset_id.in_(train_dataset_ids))
                 ).all()
             )
         training_service.complete_run(

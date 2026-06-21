@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 
 import { useToast } from "@hooks/useToast";
 import {
-  getAllEvaluations,
   getDatasetRuns,
   getDatasets,
   getMultiDatasetStats,
@@ -32,15 +31,17 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
   const [token] = useState<string | null>(() => localStorage.getItem("access_token"));
 
-  const [activeView, setActiveView] = useState<MonitorView>("comparison");
+  const [activeView, setActiveView] = useState<MonitorView>("models");
 
   const [progress, setProgress] = useState(0);
   const [, setTotalEpochs] = useState(4);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [totalSteps, setTotalSteps] = useState(0);
 
   const [datasets, setDatasets] = useState<MonitorDataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [evaluations, setEvaluations] = useState<EvaluationResponse[]>([]);
-  const [evaluationsLoading, setEvaluationsLoading] = useState(false);
+  const [evaluationsLoading] = useState(false);
 
   // Training datasets (multi-select) + optional eval datasets, with their
   // aggregated stats. Default to the single top-level selected dataset.
@@ -67,7 +68,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
   // Model selection
-  const [baseModel] = useState<string>(DEFAULT_MODEL);
+  const [baseModel, setBaseModel] = useState<string>(DEFAULT_MODEL);
   const [customModel, setCustomModel] = useState<string>("");
   const [useCustomModel, setUseCustomModel] = useState(false);
 
@@ -76,6 +77,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const reconnectAttemptsRef = useRef(0);
   const isTrainingRef = useRef(false);
   const totalEpochsRef = useRef(4);
+  const totalStepsRef = useRef(0);
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
 
   // keep a ref of isTraining so the WS reconnect logic can read it without re-subscribing
@@ -94,6 +96,9 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     setTrainingStatus("");
     setSelectedLabels([]);
     setEvaluations([]);
+    setProgress(0);
+    setCurrentStep(0);
+    setTotalSteps(0);
   };
 
   // ------------------ DATASETS ------------------
@@ -145,32 +150,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
       cancelled = true;
     };
   }, [trainingDatasetIds, token]);
-
-  // ------------------ ALL RUN EVAL (comparison) ------------------
-
-  useEffect(() => {
-    if (!selectedDatasetId || !token) return;
-
-    let cancelled = false;
-    setEvaluationsLoading(true);
-    getAllEvaluations(selectedDatasetId)
-      .then((data) => {
-        if (cancelled) return;
-        setEvaluations(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setEvaluations([]);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setEvaluationsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDatasetId, token]);
 
   // ------------------ RUNS ------------------
 
@@ -253,10 +232,13 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           setIsTraining(true);
           setTrainingMetrics([]);
           setProgress(0);
+          setCurrentStep(0);
           setTrainingStatus("Training started…");
 
           totalEpochsRef.current = data.num_epochs ?? 4;
           setTotalEpochs(data.num_epochs ?? 4);
+          totalStepsRef.current = data.total_steps ?? 0;
+          setTotalSteps(data.total_steps ?? 0);
           break;
 
         case "training_info":
@@ -285,24 +267,41 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           if (!Number.isFinite(loss)) break;
 
           const epoch = Number(data.epoch ?? 0);
-          setTrainingMetrics((prev) => [...prev, { epoch, loss }]);
+          const step = data.step != null ? Number(data.step) : null;
+          const evalLoss = data.eval_loss != null ? Number(data.eval_loss) : null;
+
+          if (step != null) {
+            setCurrentStep(step);
+            const total = totalStepsRef.current;
+            if (total > 0) {
+              setProgress(Math.min(100, Math.round((step / total) * 100)));
+            }
+          }
+
+          setTrainingMetrics((prev) => [...prev, { epoch, loss, step, eval_loss: evalLoss }]);
           break;
         }
 
         case "completed":
           setIsTraining(false);
           setTrainingStatus(`Completed — saved to ${data.output_path ?? "unknown"}`);
+          setCurrentStep(0);
+          setTotalSteps(0);
           break;
 
         case "stopped":
           setIsTraining(false);
           setTrainingStatus("Training stopped.");
           setProgress(0);
+          setCurrentStep(0);
+          setTotalSteps(0);
           break;
 
         case "error":
           setIsTraining(false);
           setTrainingStatus(`Error: ${data.message}`);
+          setCurrentStep(0);
+          setTotalSteps(0);
           showAlert({ message: data.message, suggestion: data.suggestion }, "error");
           break;
       }
@@ -417,6 +416,8 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
     isTraining,
     progress,
+    currentStep,
+    totalSteps,
     trainingMetrics,
     trainingStatus,
 
@@ -429,6 +430,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     valSplitRatio,
     setValSplitRatio,
     baseModel,
+    setBaseModel,
     customModel,
     setCustomModel,
     useCustomModel,

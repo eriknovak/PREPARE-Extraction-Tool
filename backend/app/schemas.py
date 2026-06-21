@@ -819,6 +819,8 @@ class RunErrorAnalysisResponse(BaseModel):
 class TrainingMetricPoint(BaseModel):
     epoch: int
     loss: Optional[float] = None
+    step: Optional[int] = None
+    eval_loss: Optional[float] = None
 
 
 class FullStatsRequest(BaseModel):
@@ -850,6 +852,8 @@ class ModelSummary(BaseModel):
     created_at: Optional[datetime] = None
     # Overall macro-F1 across labels, if the model has been evaluated.
     score: Optional[float] = None
+    run_id: Optional[int] = None  # links a model to its training run
+    is_active: bool = False  # is this the global active model?
 
 
 class ModelsOutput(BaseModel):
@@ -858,15 +862,30 @@ class ModelsOutput(BaseModel):
     models: List[ModelSummary]
 
 
-class ActiveModelResponse(BaseModel):
-    """The model a dataset uses for extraction (null = bioner default)."""
+class ModelDetailResponse(BaseModel):
+    """Detail for one trained model (per-model view; no cross-model comparison)."""
 
-    dataset_id: int
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: int
+    run_id: Optional[int] = None
+    base_model: Optional[str] = None
+    train_dataset_ids: List[int] = []
+    eval_dataset_ids: List[int] = []
+    train_stats: Optional[dict] = None
+    labels: List[str] = []
+    per_label_trained: Dict[str, Dict[str, Any]] = {}
+    per_label_baseline: Dict[str, Dict[str, Any]] = {}
+
+
+class ActiveModelResponse(BaseModel):
+    """The globally selected extraction model (null = bioner default)."""
+
     active_model: Optional[ModelSummary] = None
 
 
 class SetActiveModelRequest(BaseModel):
-    """Set (``model_id``) or clear (``null``) a dataset's active extraction model."""
+    """Set (``model_id``) or clear (``null``) the global active extraction model."""
 
     model_config = ConfigDict(protected_namespaces=())
 

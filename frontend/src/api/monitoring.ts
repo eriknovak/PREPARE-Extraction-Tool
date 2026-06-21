@@ -4,6 +4,7 @@ import type {
   DatasetsOutput,
   EvaluationResponse,
   MessageOutput,
+  ModelDetailResponse,
   ModelsOutput,
   ModelSummary,
   MonitorDatasetStats,
@@ -93,17 +94,22 @@ export async function getModels(): Promise<ModelSummary[]> {
   return res.models;
 }
 
-/** The model a dataset currently uses for extraction (null active_model = default). */
-export function getDatasetActiveModel(datasetId: number) {
-  return apiRequest<ActiveModelResponse>(`/bioner/datasets/${datasetId}/active-model`);
+/** The GLOBAL active extraction model (null active_model = bioner default). */
+export function getActiveModel() {
+  return apiRequest<ActiveModelResponse>("/bioner/active-model");
 }
 
-/** Set (modelId) or clear (null = default) the dataset's active extraction model. */
-export function setDatasetActiveModel(datasetId: number, modelId: number | null) {
-  return apiRequest<ActiveModelResponse>(`/bioner/datasets/${datasetId}/active-model`, {
+/** Set (modelId) or clear (null = default) the GLOBAL active extraction model. */
+export function setActiveModel(modelId: number | null) {
+  return apiRequest<ActiveModelResponse>("/bioner/active-model", {
     method: "POST",
     body: JSON.stringify({ model_id: modelId }),
   });
+}
+
+/** Per-model detail: training datasets, snapshot stats, base-vs-trained eval. */
+export function getModelDetail(modelId: number) {
+  return apiRequest<ModelDetailResponse>(`/bioner/models/${modelId}/detail`);
 }
 
 /* ---------------- TRAINING ---------------- */

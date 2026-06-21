@@ -9,8 +9,19 @@ import StatCard from "@components/StatCard";
 
 import LabelSelector from "../LabelSelector";
 import TrainingLossChart from "../charts/TrainingLossChart";
-import { DEFAULT_MODEL, useMonitor } from "../hooks/useMonitor";
+import { useMonitor } from "../hooks/useMonitor";
 import styles from "./TrainingView.module.css";
+
+const GLINER_BASELINES = [
+  { value: "urchade/gliner_multi-v2.1", label: "Multilingual (default)" },
+  { value: "urchade/gliner_large-v2.1", label: "Large (best, slower)" },
+  { value: "E3-JSI/gliner-multi-med-ner-synthetic-v1", label: "Biomedical / clinical (multilingual)" },
+] as const;
+
+const BASELINE_SELECT_OPTIONS = [
+  ...GLINER_BASELINES.map((b) => ({ value: b.value, label: b.label })),
+  { value: "custom", label: "Custom…" },
+];
 
 const SPLIT_OPTIONS = [
   { value: "0", label: "No split (100% train)" },
@@ -37,6 +48,8 @@ const TrainingView = () => {
     setSelectedLabels,
     valSplitRatio,
     setValSplitRatio,
+    baseModel,
+    setBaseModel,
     customModel,
     setCustomModel,
     useCustomModel,
@@ -49,6 +62,8 @@ const TrainingView = () => {
     setTrainBatchSize,
     isTraining,
     progress,
+    currentStep,
+    totalSteps,
     trainingMetrics,
     trainingStatus,
     startTraining,
@@ -117,31 +132,39 @@ const TrainingView = () => {
       <Card title="Training configuration">
         {/* Model selector */}
         <div className={styles.field}>
-          <p className={styles.field__label}>Base model</p>
+          <label className={styles.field__label} htmlFor="base-model-select">Base model</label>
 
-          <div className={styles["radio-group"]}>
-            <label className={styles.radio}>
-              <input type="radio" checked={!useCustomModel} onChange={() => setUseCustomModel(false)} />
-              <span>
-                Default: <code className={styles.code}>{DEFAULT_MODEL}</code>
-              </span>
-            </label>
+          <Select
+            id="base-model-select"
+            value={useCustomModel ? "custom" : baseModel}
+            onValueChange={(v) => {
+              if (v === "custom") {
+                setUseCustomModel(true);
+              } else {
+                setUseCustomModel(false);
+                setBaseModel(v);
+              }
+            }}
+            options={BASELINE_SELECT_OPTIONS}
+            fullWidth={false}
+          />
 
-            <label className={styles.radio}>
-              <input type="radio" checked={useCustomModel} onChange={() => setUseCustomModel(true)} />
-              <span>Custom model path or HuggingFace ID</span>
-            </label>
-
-            {useCustomModel && (
+          {useCustomModel && (
+            <>
               <input
+                id="custom-model-input"
                 type="text"
                 value={customModel}
                 onChange={(e) => setCustomModel(e.target.value)}
                 placeholder="e.g. urchade/gliner_medium-v2.1 or /model/gliner/my-model"
                 className={styles.input}
+                style={{ marginTop: "var(--space-2)" }}
               />
-            )}
-          </div>
+              <p className={styles.warning} role="alert">
+                ⚠ Advanced: custom base models must be GLiNER-compatible. An incompatible model will fail to train.
+              </p>
+            </>
+          )}
         </div>
 
         {/* Train / Eval split */}
@@ -229,6 +252,11 @@ const TrainingView = () => {
       <Card title="Training progress">
         <div className={styles.progress}>
           <ProgressBar value={progress} />
+          {(isTraining || currentStep > 0) && (
+            <p className={styles.progressLabel}>
+              Step {currentStep} / {totalSteps} ({progress}%)
+            </p>
+          )}
         </div>
 
         <TrainingLossChart metrics={trainingMetrics} isTraining={isTraining} hasRuns={runs.length > 0} />

@@ -223,7 +223,9 @@ def test_list_runs_paginated_and_enriched(client):
     training_service.record_evaluation(
         db, run.id, {"Drug": {"exact_f1": 0.8}, "Dose": {"exact_f1": 0.6}}
     )
-    resp = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/runs?page=1&limit=20")
+    resp = client.get(
+        f"/api/v1/bioner/datasets/{client.dataset_id}/runs?page=1&limit=20"
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert "runs" in body and "pagination" in body
@@ -284,28 +286,32 @@ def test_list_models_returns_trained(client):
 
 
 def test_get_active_model_defaults_to_none(client):
-    resp = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/active-model")
+    resp = client.get("/api/v1/bioner/active-model")
     assert resp.status_code == 200
     body = resp.json()
-    assert body["dataset_id"] == client.dataset_id
+    assert "dataset_id" not in body
     assert body["active_model"] is None
 
 
-def test_set_and_clear_active_model(client):
+def test_set_and_clear_active_model(client, monkeypatch):
+    import app.routes.v1.bioner as bioner_routes
+
+    monkeypatch.setattr(bioner_routes, "_activate_on_bioner", lambda *a, **k: None)
+
     model = _make_trained_model(client)
     # Set
     resp = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": model.id},
     )
     assert resp.status_code == 200
     assert resp.json()["active_model"]["id"] == model.id
     # Reflected by GET
-    got = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/active-model")
+    got = client.get("/api/v1/bioner/active-model")
     assert got.json()["active_model"]["id"] == model.id
     # Clear (null = default)
     cleared = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": None},
     )
     assert cleared.status_code == 200
@@ -321,7 +327,7 @@ def test_set_active_model_rejects_model_without_path(client):
     db.commit()
     db.refresh(model)
     resp = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": model.id},
     )
     assert resp.status_code == 400
@@ -329,10 +335,20 @@ def test_set_active_model_rejects_model_without_path(client):
 
 def test_set_active_model_rejects_missing_model(client):
     resp = client.post(
-        f"/api/v1/bioner/datasets/{client.dataset_id}/active-model",
+        "/api/v1/bioner/active-model",
         json={"model_id": 999999},
     )
     assert resp.status_code == 404
+
+
+def test_set_active_model_blocked_during_extraction(client, monkeypatch):
+    import app.routes.v1.bioner as bioner_routes
+
+    monkeypatch.setattr(
+        bioner_routes.extraction_lock, "any_extraction_job_active", lambda db: True
+    )
+    resp = client.post("/api/v1/bioner/active-model", json={"model_id": None})
+    assert resp.status_code == 409
 
 
 def test_delete_run(client):
@@ -353,3 +369,203 @@ def test_delete_run(client):
     listing = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/runs")
     assert all(r["run_id"] != run.id for r in listing.json()["runs"])
     assert follow.status_code == 200
+
+
+def test_start_training_snapshots_train_stats(client):
+    """After POST /training/start the created run carries a populated train_stats."""
+    from app.models_db import TrainingRun
+
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_id": client.dataset_id,
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_small-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 200
+    run_id = resp.json()["run_id"]
+
+    db = client.session
+    db.expire_all()
+    run = db.get(TrainingRun, run_id)
+    assert run is not None
+    assert run.train_stats is not None
+    assert run.train_stats["record_count"] >= 1
+    assert client.dataset_id in run.train_stats["train_dataset_ids"]
+
+
+# ================================================
+# Task 7: global model list + per-model detail
+# ================================================
+
+
+def _make_trained_model_with_run(client):
+    """Create a TrainingRun + linked Model (with path + train_stats) for detail tests."""
+    from app.models_db import Model
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_ids=[client.dataset_id],
+        base_model="urchade/gliner_small-v2.1",
+        labels=["Drug"],
+        val_ratio=0.1,
+        train_stats={"record_count": 1, "term_count": 0, "label_distribution": {}},
+    )
+    # Create Model linked to the run (mirrors complete_run without filesystem I/O)
+    model = Model(
+        name=f"run-{run.id}",
+        version="20240101120000",
+        base_model="urchade/gliner_small-v2.1",
+        path=f"/models/run-{run.id}",
+        dataset_id=client.dataset_id,
+    )
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+    run.model_id = model.id
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    db.refresh(model)
+    return model, run
+
+
+def test_models_list_excludes_baseline_rows_and_is_global(client):
+    """GET /models returns trained models globally; 'Base model' rows are excluded."""
+    from app.models_db import Model
+
+    db = client.session
+
+    # Create a trained model (has a path)
+    trained, _ = _make_trained_model_with_run(client)
+
+    # Create a baseline Model row (no path — same as get_baseline_model creates)
+    baseline = Model(
+        name="Base model",
+        version="baseline",
+        dataset_id=client.dataset_id,
+    )
+    db.add(baseline)
+    db.commit()
+
+    resp = client.get("/api/v1/bioner/models")
+    assert resp.status_code == 200
+    names = [m["name"] for m in resp.json()["models"]]
+
+    assert "Base model" not in names
+    assert trained.name in names
+
+
+def test_models_list_marks_active(client, monkeypatch):
+    """The model set as global active should have is_active == True in the list."""
+    from app.services import training_service
+
+    model = _make_trained_model(client)
+
+    db = client.session
+    training_service.set_global_active_model(db, model.id)
+
+    resp = client.get("/api/v1/bioner/models")
+    assert resp.status_code == 200
+    summaries = resp.json()["models"]
+    match = next(s for s in summaries if s["id"] == model.id)
+    assert match["is_active"] is True
+
+
+def test_model_detail_returns_train_stats_and_base_vs_trained(client):
+    """GET /models/{id}/detail returns run info, train_stats, per_label keys."""
+    model, run = _make_trained_model_with_run(client)
+
+    resp = client.get(f"/api/v1/bioner/models/{model.id}/detail")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["model_id"] == model.id
+    assert body["run_id"] == run.id
+    assert "train_stats" in body
+    assert "per_label_trained" in body
+    assert "per_label_baseline" in body
+
+
+def test_model_detail_404_for_unknown_model(client):
+    """GET /models/99999/detail returns 404."""
+    resp = client.get("/api/v1/bioner/models/99999/detail")
+    assert resp.status_code == 404
+
+
+# ================================================
+# Task 9: step-indexed train/eval metrics + total_steps
+# ================================================
+
+
+def _make_pending_run(client):
+    """Create a pending TrainingRun and return its id."""
+    from app.models_db import TrainingRun
+
+    db = client.session
+    run = TrainingRun(
+        dataset_id=client.dataset_id,
+        base_model="m",
+        labels=["Drug"],
+        val_ratio=0.1,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return run.id
+
+
+def test_train_log_event_persists_step_metric(client):
+    """POST train_log event with step → metrics endpoint returns a row with that step/loss."""
+    run_id = _make_pending_run(client)
+    payload = {
+        "type": "train_log",
+        "run_id": run_id,
+        "step": 10,
+        "epoch": 1.0,
+        "loss": 0.5,
+    }
+    r = client.post("/api/v1/bioner/internal/training-events", json=payload)
+    assert r.status_code == 200
+    metrics = client.get(f"/api/v1/bioner/runs/{run_id}/metrics").json()
+    assert any(m["step"] == 10 and m["loss"] == 0.5 for m in metrics)
+
+
+def test_eval_step_persists_eval_loss(client):
+    """POST train_log event with eval_loss → metrics endpoint returns a row with eval_loss."""
+    run_id = _make_pending_run(client)
+    payload = {
+        "type": "train_log",
+        "run_id": run_id,
+        "step": 20,
+        "epoch": 1.0,
+        "eval_loss": 0.4,
+    }
+    client.post("/api/v1/bioner/internal/training-events", json=payload)
+    metrics = client.get(f"/api/v1/bioner/runs/{run_id}/metrics").json()
+    assert any(m["step"] == 20 and m["eval_loss"] == 0.4 for m in metrics)
+
+
+def test_training_start_sets_total_steps(client):
+    """POST training_start event with total_steps → run.train_stats["total_steps"] is set."""
+    from app.models_db import TrainingRun
+
+    run_id = _make_pending_run(client)
+    payload = {
+        "type": "training_start",
+        "run_id": run_id,
+        "num_epochs": 4,
+        "total_steps": 200,
+    }
+    r = client.post("/api/v1/bioner/internal/training-events", json=payload)
+    assert r.status_code == 200
+    db = client.session
+    db.expire_all()
+    run = db.get(TrainingRun, run_id)
+    assert run is not None
+    assert run.train_stats is not None
+    assert run.train_stats["total_steps"] == 200

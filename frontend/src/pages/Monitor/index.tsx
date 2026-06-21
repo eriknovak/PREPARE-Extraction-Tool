@@ -5,9 +5,8 @@ import { usePageTitle } from "@hooks/usePageTitle";
 import { useMonitor } from "./hooks/useMonitor";
 import MonitorProvider from "./components/MonitorProvider";
 import MonitorHeader from "./components/MonitorHeader";
-import DatasetSelector from "./components/DatasetSelector";
 import ViewTabs from "./components/ViewTabs";
-import ComparisonView from "./views/ComparisonView";
+import ModelsView from "./views/ModelsView";
 import TrainingView from "./views/TrainingView";
 import styles from "./styles.module.css";
 
@@ -19,11 +18,9 @@ const MonitorContent = () => {
     <div className={styles.page}>
       <MonitorHeader />
 
-      <DatasetSelector />
-
       <ViewTabs />
 
-      {activeView === "comparison" ? <ComparisonView /> : <TrainingView />}
+      {activeView === "models" ? <ModelsView /> : <TrainingView />}
 
       <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} duration={5000} />
     </div>

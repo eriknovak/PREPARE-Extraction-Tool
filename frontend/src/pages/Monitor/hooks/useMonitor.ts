@@ -3,13 +3,13 @@ import { createContext, useContext } from "react";
 import type { useToast } from "@hooks/useToast";
 import type { EvaluationResponse, MonitorDataset, MonitorDatasetStats, MonitorRun, TrainingMetric } from "types";
 
-export const DEFAULT_MODEL = "urchade/gliner_small-v2.1";
+export const DEFAULT_MODEL = "urchade/gliner_multi-v2.1";
 
-export type MonitorView = "comparison" | "training";
+export type MonitorView = "models" | "training";
 
 /**
  * The shared Monitor contract. Both `index.tsx` and the view components
- * (ComparisonView / TrainingView) consume this via `useMonitor()`. The shape is
+ * (ModelsView / TrainingView) consume this via `useMonitor()`. The shape is
  * frozen so the views can be developed independently against it.
  */
 export interface MonitorContextValue {
@@ -38,6 +38,8 @@ export interface MonitorContextValue {
   // ── training state ──
   isTraining: boolean;
   progress: number;
+  currentStep: number;
+  totalSteps: number;
   trainingMetrics: TrainingMetric[];
   trainingStatus: string;
 
@@ -53,6 +55,7 @@ export interface MonitorContextValue {
   valSplitRatio: number;
   setValSplitRatio: (ratio: number) => void;
   baseModel: string;
+  setBaseModel: (model: string) => void;
   customModel: string;
   setCustomModel: (model: string) => void;
   useCustomModel: boolean;

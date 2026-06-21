@@ -75,15 +75,12 @@ class Dataset(SQLModel, table=True):
     uploaded: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_modified: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     labels: List[str] = Field(sa_column=Column(JSON))
-    label_relations: List[dict] = Field(default_factory=list, sa_column=Column(JSON, nullable=True))
+    label_relations: List[dict] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=True)
+    )
     date_label: Optional[str] = Field(default=None, nullable=True)
     status: ProcessingStatus = Field(default=ProcessingStatus.PROCESSING, index=True)
     error_message: Optional[str] = None
-
-    # Trained model selected for NER extraction on this dataset (null = bioner default).
-    active_model_id: Optional[int] = Field(
-        default=None, foreign_key="model.id", ondelete="SET NULL", nullable=True
-    )
 
     # Relationship to User (owner)
     user_id: int = Field(foreign_key="user.id", ondelete="CASCADE", nullable=False)
@@ -242,6 +239,7 @@ class SourceTerm(SQLModel, table=True):
     # Relationship to the Cluster this term belongs to
     cluster: Optional["Cluster"] = Relationship(back_populates="source_terms")
 
+
 class SourceTermEx(SQLModel, table=True):
     """
     Source term model representing an extracted term from a record.
@@ -264,8 +262,8 @@ class SourceTermEx(SQLModel, table=True):
     model_id: int = Field(foreign_key="model.id", ondelete="CASCADE", nullable=False)
     model: Optional["Model"] = Relationship(back_populates="source_terms")
 
-class Model(SQLModel, table=True):
 
+class Model(SQLModel, table=True):
     __tablename__ = "model"
 
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -301,15 +299,13 @@ class Model(SQLModel, table=True):
     # One-to-one back to the training run that produced this model
     training_run: Optional["TrainingRun"] = Relationship(back_populates="model")
 
-class Evaluation(SQLModel, table=True):
 
+class Evaluation(SQLModel, table=True):
     __tablename__ = "evaluation"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     label: str
-    score: Dict[str, Any] = Field(
-        sa_column=Column(JSON, nullable=False)
-    )
+    score: Dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
 
     # Relationship to Dataset (one-to-many)
     dataset_id: int = Field(
@@ -318,9 +314,7 @@ class Evaluation(SQLModel, table=True):
     dataset: Optional["Dataset"] = Relationship(back_populates="evaluations")
 
     # Relationship to Model (one-to-many)
-    model_id: int = Field(
-        foreign_key="model.id", ondelete="CASCADE", nullable=False
-    )
+    model_id: int = Field(foreign_key="model.id", ondelete="CASCADE", nullable=False)
     model: Optional["Model"] = Relationship(back_populates="evaluations")
 
 
@@ -365,7 +359,9 @@ class TrainingRun(SQLModel, table=True):
     base_model: str
     labels: List[str] = Field(sa_column=Column(JSON))
     val_ratio: float = Field(default=0.0)
-    status: str = Field(default="pending", index=True)  # pending|running|completed|failed|stopped
+    status: str = Field(
+        default="pending", index=True
+    )  # pending|running|completed|failed|stopped
     error_message: Optional[str] = Field(default=None)
     # Marks the run designated as the dataset's preferred/best model (single per dataset).
     preferred: bool = Field(default=False)
@@ -373,6 +369,12 @@ class TrainingRun(SQLModel, table=True):
         default=None, foreign_key="model.id", ondelete="SET NULL"
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Snapshot of the training datasets' stats AT TRAINING TIME (datasets mutate
+    # afterward). Shape: {train_dataset_ids, eval_dataset_ids, record_count,
+    # term_count, label_distribution, train_size, eval_size, val_ratio}.
+    train_stats: Optional[dict] = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
 
     metrics: list["TrainingMetric"] = Relationship(
         back_populates="run",
@@ -392,8 +394,27 @@ class TrainingMetric(SQLModel, table=True):
     )
     epoch: int
     loss: Optional[float] = Field(default=None)
+    # Step-indexed metrics for the live train/eval loss curve. ``step`` is the
+    # trainer global step; ``eval_loss`` is populated only on eval-step rows.
+    step: Optional[int] = Field(default=None, index=True)
+    eval_loss: Optional[float] = Field(default=None)
 
     run: Optional["TrainingRun"] = Relationship(back_populates="metrics")
+
+
+class AppSettings(SQLModel, table=True):
+    """Single-row, instance-wide application settings.
+
+    Always uses ``id == 1``. Holds the GLOBAL active NER extraction model shared
+    by all users (null = bioner's launch default model).
+    """
+
+    __tablename__ = "app_settings"
+
+    id: Optional[int] = Field(default=1, primary_key=True)
+    active_model_id: Optional[int] = Field(
+        default=None, foreign_key="model.id", ondelete="SET NULL", nullable=True
+    )
 
 
 class Cluster(SQLModel, table=True):
@@ -467,9 +488,7 @@ class ExtractionJob(SQLModel, table=True):
     dataset_id: int = Field(
         foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
     )
-    model_id: int = Field(
-        foreign_key="model.id", nullable=False, index=True
-    )
+    model_id: int = Field(foreign_key="model.id", nullable=False, index=True)
     total: int = Field(default=0)
     completed: int = Field(default=0)
     status: str = Field(
@@ -480,7 +499,8 @@ class ExtractionJob(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    currently_used: bool = Field(default=True) # samo en True
+    currently_used: bool = Field(default=True)  # samo en True
+
 
 class Vocabulary(SQLModel, table=True):
     """

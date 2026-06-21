@@ -17,7 +17,10 @@ from sqlmodel import Session, func, select
 from app.core.database import Dataset, User, engine, get_session
 from app.core.settings import settings
 from app.interfaces import Entity, LabelsInput, NERRequest
-from app.library.record_processing import auto_link_entities_for_record, link_dates_for_record
+from app.library.record_processing import (
+    auto_link_entities_for_record,
+    link_dates_for_record,
+)
 from app.models_db import (
     ExtractionJob,
     Model,
@@ -36,6 +39,7 @@ from app.schemas import (
     GLiNERTrainingRequest,
     MessageOutput,
     LabelErrorAnalysis,
+    ModelDetailResponse,
     ModelSummary,
     ModelsOutput,
     RunErrorAnalysisResponse,
@@ -48,6 +52,7 @@ from app.schemas import (
     TrainingStartResponse,
     create_pagination_metadata,
 )
+import app.services.extraction_lock as extraction_lock
 from app.services import (
     bioner_client,
     evaluation_service,
@@ -79,6 +84,7 @@ def extract_entities(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Extract service unavailable",
         )
+
 
 @router.post("/{dataset_id}/records/{record_id}/extract", response_model=MessageOutput)
 def extract_entities_from_record(
@@ -118,9 +124,12 @@ def extract_entities_from_record(
             message=f"Record {record_id} is reviewed; extraction skipped"
         )
 
-    # Activate the dataset's selected model (or default) and resolve its Model id
-    # up front so it can be used in the already-extracted check below.
-    model_id = resolve_active_model(dataset, db)
+    # Resolve the active model id (DB-only for a global selection; queries bioner
+    # for the default). Note: this route does NOT create an ExtractionJob, so it
+    # is outside the extraction-active lock (which only inspects ExtractionJob
+    # rows). That is an accepted limitation — single-record extraction is
+    # synchronous and short-lived; the lock covers batch jobs only.
+    model_id = resolve_active_model(db)
 
     already_extracted_terms = db.exec(
         select(SourceTermEx)
@@ -230,12 +239,7 @@ def extract_entities_from_record(
     ex_terms: List[SourceTermEx] = []
 
     for entity in entities:
-        key = (
-            entity["text"],
-            entity["label"],
-            entity["start"],
-            entity["end"]
-        )
+        key = (entity["text"], entity["label"], entity["start"], entity["end"])
 
         if key in seen_in_response:
             continue
@@ -332,8 +336,8 @@ def extract_entities_from_records(
     # TODO
     records_to_process = [r for r in records if not r.reviewed]
 
-    # Activate the dataset's selected model (or default) and resolve its Model id.
-    model_id = resolve_active_model(dataset, db)
+    # Activate the globally selected model (or default) and resolve its Model id.
+    model_id = resolve_active_model(db)
 
     # check if a job for this dataset and model already exists and is currently "used"
     existing_job = db.exec(
@@ -341,7 +345,7 @@ def extract_entities_from_records(
         .where(
             ExtractionJob.dataset_id == dataset_id,
             ExtractionJob.model_id == model_id,
-            ExtractionJob.currently_used == True  # noqa: E712
+            ExtractionJob.currently_used == True,  # noqa: E712
         )
         .order_by(ExtractionJob.created_at.desc())
     ).first()
@@ -380,7 +384,7 @@ def extract_entities_from_records(
         total=total,
         completed=0,
         status="pending",
-        currently_used=True
+        currently_used=True,
     )
 
     db.add(job)
@@ -428,9 +432,14 @@ def get_active_extraction_job(
     """Return the latest pending/running extraction job for the dataset, or null if none."""
     dataset = db.get(Dataset, dataset_id)
     if dataset is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+        )
     if dataset.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this dataset")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this dataset",
+        )
 
     job = db.exec(
         select(ExtractionJob)
@@ -537,7 +546,9 @@ def cancel_extraction_job(
     return MessageOutput(message="Cancellation requested")
 
 
-def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], model_id: int):
+def run_dataset_extraction_job(
+    job_id: int, dataset_id: int, labels: List[str], model_id: int
+):
     """Background task that extracts entities for each unreviewed record."""
 
     with Session(engine) as session:
@@ -612,18 +623,13 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
                     select(SourceTerm).where(SourceTerm.record_id == record.id)
                 ).all()
             }
-            
+
             seen_in_response = set()
 
             new_terms: List[SourceTerm] = []
             ex_terms: List[SourceTermEx] = []
             for entity in entities:
-                key = (
-                    entity["text"],
-                    entity["label"],
-                    entity["start"],
-                    entity["end"]
-                )
+                key = (entity["text"], entity["label"], entity["start"], entity["end"])
 
                 if key in seen_in_response:
                     continue
@@ -636,7 +642,7 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
                         start_position=entity["start"],
                         end_position=entity["end"],
                         score=entity.get("score"),
-                        model_id=model_id
+                        model_id=model_id,
                     )
                 )
 
@@ -654,7 +660,7 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
                         automatically_extracted=True,
                     )
                 )
-                
+
             if new_terms:
                 session.add_all(new_terms)
                 session.flush()
@@ -679,19 +685,16 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
 # NER model routes
 # ================================================
 
+
 def get_or_create_model(metadata: dict, db: Session):
     statement = select(Model).where(
-        Model.name == metadata["name"],
-        Model.version == metadata["version"]
+        Model.name == metadata["name"], Model.version == metadata["version"]
     )
     existing = db.exec(statement).first()
     if existing:
         return existing
-    
-    new_model = Model(
-        name=metadata["name"],
-        version=metadata["version"]
-    )
+
+    new_model = Model(name=metadata["name"], version=metadata["version"])
 
     db.add(new_model)
     db.commit()
@@ -716,39 +719,26 @@ def _model_summary(db: Session, model: Model) -> ModelSummary:
     )
 
 
-def resolve_active_model(dataset: Dataset, db: Session) -> int:
-    """Activate the dataset's selected NER model on bioner and return the Model id
-    to record extracted terms under.
+def resolve_active_model(db: Session) -> int:
+    """Return the Model id to record extracted terms under, using the GLOBAL
+    active model.
 
-    When the dataset has a selected model with an artifact path, bioner is asked
-    to activate it and that Model's id is returned. Otherwise bioner is reverted
-    to its default model and the default's Model row (looked up / created from
-    ``/model/info``) is used — preserving the original default behaviour. Raises
-    503 if bioner is unreachable.
+    - Globally-selected model (has a path): returns that model's id directly,
+      with NO per-call bioner activation. Activation already happened when the
+      model was selected via POST /bioner/active-model, so this is a fast
+      DB-only lookup in the hot path.
+      Known limitation: if the bioner container restarts it reverts to its
+      launch default until a model is re-selected in Monitor.
+    - Default model (no global selection): queries bioner /model/info to
+      identify the currently-loaded model and upserts its metadata row.
+      Raises 503 if bioner is unreachable.
     """
-    model_db = None
-    if dataset.active_model_id is not None:
-        candidate = db.get(Model, dataset.active_model_id)
-        if candidate is not None and candidate.path:
-            model_db = candidate
+    model_db = training_service.get_global_active_model(db)
+    if model_db is not None and model_db.path:
+        return model_db.id
 
+    # Default model: record under the default's metadata row.
     try:
-        if model_db is not None:
-            resp = requests.post(
-                f"{settings.EXTRACT_HOST}/model/activate",
-                json={"model": model_db.path},
-                timeout=300,
-            )
-            resp.raise_for_status()
-            return model_db.id
-
-        # Default model: revert bioner and record under the default's metadata.
-        resp = requests.post(
-            f"{settings.EXTRACT_HOST}/model/activate",
-            json={"model": None},
-            timeout=300,
-        )
-        resp.raise_for_status()
         info = requests.get(f"{settings.EXTRACT_HOST}/model/info", timeout=30)
         info.raise_for_status()
         metadata = info.json()["model"]
@@ -770,96 +760,131 @@ def list_models(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """List the caller's trained models (those with an artifact path) for selection."""
+    """List all trained models (instance-global, since the active model is global).
+
+    Excludes per-dataset 'Base model' baseline rows (they are comparison anchors,
+    not selectable models). Each summary carries its run id and whether it is the
+    global active model.
+    """
+    active_model_id = training_service.get_app_settings(db).active_model_id
     models = db.exec(
         select(Model)
-        .join(Dataset, Dataset.id == Model.dataset_id)
-        .where(Dataset.user_id == current_user.id)
         .where(Model.path.is_not(None))
+        .where(Model.name != training_service.BASELINE_MODEL_NAME)
         .order_by(Model.created_at.desc())
     ).all()
-    return ModelsOutput(models=[_model_summary(db, m) for m in models])
+    summaries = []
+    for m in models:
+        summary = _model_summary(db, m)
+        summary.run_id = m.training_run.id if m.training_run else None
+        summary.is_active = m.id == active_model_id
+        summaries.append(summary)
+    return ModelsOutput(models=summaries)
 
 
-@router.get(
-    "/datasets/{dataset_id}/active-model", response_model=ActiveModelResponse
-)
-def get_dataset_active_model(
-    dataset_id: int,
+@router.get("/models/{model_id}/detail", response_model=ModelDetailResponse)
+def model_detail(
+    model_id: int,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """Return the model the dataset uses for extraction (null = bioner default)."""
-    dataset = db.get(Dataset, dataset_id)
-    if dataset is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
-        )
-    if dataset.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this dataset",
-        )
-    active = None
-    if dataset.active_model_id is not None:
-        model = db.get(Model, dataset.active_model_id)
-        if model is not None:
-            active = _model_summary(db, model)
-    return ActiveModelResponse(dataset_id=dataset_id, active_model=active)
+    """Per-model detail: training datasets, snapshot stats, labels, and the
+    base-vs-trained per-label evaluation (same split, the only valid comparison)."""
+    model = db.get(Model, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    run = model.training_run
+    per_label_trained = _scores_only(evaluation_service.get_per_label(db, model.id))
+    per_label_baseline = {}
+    train_ids: list[int] = []
+    eval_ids: list[int] = []
+    train_stats = None
+    labels: list[str] = []
+    if run is not None:
+        train_ids = training_service.get_dataset_ids(db, run.id, role="train") or [
+            run.dataset_id
+        ]
+        eval_ids = training_service.get_dataset_ids(db, run.id, role="eval") or []
+        train_stats = run.train_stats
+        labels = run.labels or []
+        baseline = training_service.get_baseline_model(db, run.dataset_id)
+        if baseline is not None:
+            per_label_baseline = _scores_only(
+                evaluation_service.get_per_label(db, baseline.id)
+            )
+    return ModelDetailResponse(
+        model_id=model.id,
+        run_id=run.id if run else None,
+        base_model=model.base_model,
+        train_dataset_ids=train_ids,
+        eval_dataset_ids=eval_ids,
+        train_stats=train_stats,
+        labels=labels,
+        per_label_trained=per_label_trained,
+        per_label_baseline=per_label_baseline,
+    )
 
 
-@router.post(
-    "/datasets/{dataset_id}/active-model", response_model=ActiveModelResponse
-)
-def set_dataset_active_model(
-    dataset_id: int,
+def _activate_on_bioner(model_path: Optional[str]) -> None:
+    """Hot-swap bioner to the given model path (None = revert to launch default)."""
+    try:
+        resp = requests.post(
+            f"{settings.EXTRACT_HOST}/model/activate",
+            json={"model": model_path},
+            timeout=300,
+        )
+        resp.raise_for_status()
+    except requests.RequestException:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extraction service unavailable",
+        )
+
+
+@router.get("/active-model", response_model=ActiveModelResponse)
+def get_active_model(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Return the GLOBAL active extraction model (null = bioner default)."""
+    model = training_service.get_global_active_model(db)
+    active = _model_summary(db, model) if model is not None else None
+    return ActiveModelResponse(active_model=active)
+
+
+@router.post("/active-model", response_model=ActiveModelResponse)
+def set_active_model(
     payload: SetActiveModelRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """Set (``model_id``) or clear (``null``) the dataset's active extraction model."""
-    dataset = db.get(Dataset, dataset_id)
-    if dataset is None:
+    """Set/clear the GLOBAL active extraction model and hot-swap bioner.
+
+    Blocked (409) while any extraction job is active instance-wide so an in-flight
+    job's pinned model can't be undermined.
+    """
+    if extraction_lock.any_extraction_job_active(db):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
-        )
-    if dataset.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not authorized to access this dataset",
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Cannot change the model while an extraction job is running",
         )
 
     if payload.model_id is None:
-        dataset.active_model_id = None
-        db.add(dataset)
-        db.commit()
-        return ActiveModelResponse(dataset_id=dataset_id, active_model=None)
+        _activate_on_bioner(None)
+        training_service.set_global_active_model(db, None)
+        return ActiveModelResponse(active_model=None)
 
     model = db.get(Model, payload.model_id)
     if model is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Model not found"
-        )
+        raise HTTPException(status_code=404, detail="Model not found")
     if model.path is None:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail="Model has no trained artifact to use for extraction",
         )
-    # Authorize via the model's owning dataset.
-    if model.dataset_id is not None:
-        owner = db.get(Dataset, model.dataset_id)
-        if owner is not None and owner.user_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not authorized to use this model",
-            )
-
-    dataset.active_model_id = model.id
-    db.add(dataset)
-    db.commit()
-    return ActiveModelResponse(
-        dataset_id=dataset_id, active_model=_model_summary(db, model)
-    )
+    _activate_on_bioner(model.path)
+    training_service.set_global_active_model(db, model.id)
+    return ActiveModelResponse(active_model=_model_summary(db, model))
 
 
 # ================================================
@@ -898,6 +923,12 @@ def start_training(
             detail="A training run is already active for one of these datasets",
         )
 
+    train_stats_snapshot = {
+        "train_dataset_ids": train_ids,
+        "eval_dataset_ids": eval_ids,
+        **_compute_dataset_stats(db, train_ids),
+        "val_ratio": req.val_ratio,
+    }
     run = training_service.create_run(
         db,
         dataset_ids=train_ids,
@@ -905,6 +936,7 @@ def start_training(
         labels=req.labels,
         val_ratio=req.val_ratio,
         eval_dataset_ids=eval_ids,
+        train_stats=train_stats_snapshot,
     )
     try:
         training_data = gliner_data_service.load_reviewed_training_data(
@@ -947,6 +979,33 @@ def stop_training(
     return MessageOutput(message="stopped")
 
 
+def _compute_dataset_stats(db: Session, dataset_ids: list) -> dict:
+    """Compute aggregated stats across the given dataset IDs.
+
+    Returns a dict with ``record_count``, ``term_count``, and
+    ``label_distribution`` (label -> count mapping).
+    """
+    record_count = db.exec(
+        select(func.count(Record.id)).where(Record.dataset_id.in_(dataset_ids))
+    ).one()
+    term_count = db.exec(
+        select(func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id.in_(dataset_ids))
+    ).one()
+    rows = db.exec(
+        select(SourceTerm.label, func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(Record.dataset_id.in_(dataset_ids))
+        .group_by(SourceTerm.label)
+    ).all()
+    return {
+        "record_count": record_count,
+        "term_count": term_count,
+        "label_distribution": {label: count for label, count in rows},
+    }
+
+
 @router.get("/datasets/{dataset_id}/full-stats", response_model=FullStatsResponse)
 def full_stats(
     dataset_id: int,
@@ -981,25 +1040,11 @@ def full_stats_multi(
     db: Session = Depends(get_session),
 ):
     """Aggregate record/term counts and label distribution across datasets."""
-    ids = req.dataset_ids
-    total_records = db.exec(
-        select(func.count(Record.id)).where(Record.dataset_id.in_(ids))
-    ).one()
-    total_terms = db.exec(
-        select(func.count(SourceTerm.id))
-        .join(Record, Record.id == SourceTerm.record_id)
-        .where(Record.dataset_id.in_(ids))
-    ).one()
-    rows = db.exec(
-        select(SourceTerm.label, func.count(SourceTerm.id))
-        .join(Record, Record.id == SourceTerm.record_id)
-        .where(Record.dataset_id.in_(ids))
-        .group_by(SourceTerm.label)
-    ).all()
+    stats = _compute_dataset_stats(db, req.dataset_ids)
     return FullStatsResponse(
-        totalRecords=total_records,
-        totalTerms=total_terms,
-        labelDistribution={label: count for label, count in rows},
+        totalRecords=stats["record_count"],
+        totalTerms=stats["term_count"],
+        labelDistribution=stats["label_distribution"],
     )
 
 
@@ -1055,9 +1100,7 @@ def list_runs(
 ):
     """Return a dataset's training runs, newest first, paginated."""
     total = db.exec(
-        select(func.count(TrainingRun.id)).where(
-            TrainingRun.dataset_id == dataset_id
-        )
+        select(func.count(TrainingRun.id)).where(TrainingRun.dataset_id == dataset_id)
     ).one()
     offset = (page - 1) * limit
     runs = db.exec(
@@ -1176,9 +1219,18 @@ def run_metrics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """Return a run's per-epoch loss curve, ordered by epoch."""
+    """Return a run's loss curve ordered by step (nulls last) then epoch."""
     metrics = training_service.get_run_metrics(db, run_id)
-    return [TrainingMetricPoint(epoch=m.epoch, loss=m.loss) for m in metrics]
+    ordered = sorted(
+        metrics,
+        key=lambda m: (m.step is None, m.step if m.step is not None else 0, m.epoch),
+    )
+    return [
+        TrainingMetricPoint(
+            epoch=m.epoch, loss=m.loss, step=m.step, eval_loss=m.eval_loss
+        )
+        for m in ordered
+    ]
 
 
 @router.get("/datasets/{dataset_id}/runs/evaluations")

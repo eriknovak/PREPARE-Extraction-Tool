@@ -5,8 +5,8 @@ import EChart from "../EChart";
 export interface LineSeries {
   /** Series label shown in the legend and tooltip. */
   name: string;
-  /** Y values, aligned by index with `xData`. */
-  data: number[];
+  /** Y values, aligned by index with `xData`. Null entries render as gaps. */
+  data: (number | null)[];
   /** Optional explicit line color (defaults to the theme palette). */
   color?: string;
   /** Smooth the line. Defaults to true. */
