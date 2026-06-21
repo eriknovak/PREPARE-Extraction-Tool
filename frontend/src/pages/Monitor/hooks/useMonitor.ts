@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import type { useToast } from "@hooks/useToast";
 import type { EvaluationResponse, MonitorDataset, MonitorDatasetStats, MonitorRun, TrainingMetric } from "types";
 
-export const DEFAULT_MODEL = "urchade/gliner_small-v2.1";
+export const DEFAULT_MODEL = "urchade/gliner_multi-v2.1";
 
 export type MonitorView = "models" | "training";
 
@@ -38,6 +38,8 @@ export interface MonitorContextValue {
   // ── training state ──
   isTraining: boolean;
   progress: number;
+  currentStep: number;
+  totalSteps: number;
   trainingMetrics: TrainingMetric[];
   trainingStatus: string;
 
@@ -53,6 +55,7 @@ export interface MonitorContextValue {
   valSplitRatio: number;
   setValSplitRatio: (ratio: number) => void;
   baseModel: string;
+  setBaseModel: (model: string) => void;
   customModel: string;
   setCustomModel: (model: string) => void;
   useCustomModel: boolean;

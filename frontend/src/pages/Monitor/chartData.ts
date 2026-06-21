@@ -38,12 +38,20 @@ const isLabelRow = (label: string): boolean => !AGGREGATE_LABELS.has(label.toLow
 export interface LossSeries {
   xData: number[];
   loss: number[];
+  evalLoss: (number | null)[];
+  /** True when any metric point carries a `step` value (prefer step over epoch on x-axis). */
+  hasStep: boolean;
 }
 
-export const buildLossSeries = (metrics: TrainingMetric[]): LossSeries => ({
-  xData: metrics.map((m) => m.epoch),
-  loss: metrics.map((m) => m.loss),
-});
+export const buildLossSeries = (metrics: TrainingMetric[]): LossSeries => {
+  const hasStep = metrics.some((m) => m.step != null);
+  return {
+    xData: hasStep ? metrics.map((m) => m.step ?? m.epoch) : metrics.map((m) => m.epoch),
+    loss: metrics.map((m) => m.loss),
+    evalLoss: metrics.map((m) => m.eval_loss ?? null),
+    hasStep,
+  };
+};
 
 /** Format an epoch (often fractional during a run) as a compact number. */
 export const formatEpoch = (value: string | number): string => {

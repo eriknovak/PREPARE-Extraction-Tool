@@ -69,7 +69,7 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
       ? [
           {
             name: "Eval loss",
-            data: metrics.map((m) => m.eval_loss ?? (null as unknown as number)),
+            data: metrics.map((m) => m.eval_loss ?? null),
           },
         ]
       : []),

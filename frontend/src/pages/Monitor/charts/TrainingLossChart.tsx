@@ -19,17 +19,23 @@ interface Props {
 /** Live training-loss curve with loading / empty / guided-first-run states. */
 const TrainingLossChart = ({ metrics, isTraining, hasRuns, onConfigure }: Props) => {
   if (metrics.length > 0) {
-    const { xData, loss } = buildLossSeries(metrics);
+    const { xData, loss, evalLoss, hasStep } = buildLossSeries(metrics);
+    const hasEvalLoss = evalLoss.some((v) => v !== null);
     return (
       <LineChart
         xData={xData}
-        xName="Epoch"
+        xName={hasStep ? "Step" : "Epoch"}
         yName="Loss"
-        showLegend={false}
+        showLegend={hasEvalLoss}
         height={CHART_HEIGHT}
         xAxisFormatter={formatEpoch}
         valueFormatter={formatLoss}
-        series={[{ name: "Loss", data: loss, color: CHART.loss, area: true }]}
+        series={[
+          { name: "Train loss", data: loss, color: CHART.loss, area: true },
+          ...(hasEvalLoss
+            ? [{ name: "Eval loss", data: evalLoss, color: CHART.relaxedF1 }]
+            : []),
+        ]}
       />
     );
   }
