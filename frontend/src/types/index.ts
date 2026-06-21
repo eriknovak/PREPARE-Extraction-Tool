@@ -498,6 +498,8 @@ export interface ModelSummary {
   created_at?: string | null;
   /** Overall macro-F1 across labels, if the model has been evaluated. */
   score?: number | null;
+  run_id?: number | null;
+  is_active?: boolean;
 }
 
 /** List of trained models available for selection. */
@@ -505,9 +507,8 @@ export interface ModelsOutput {
   models: ModelSummary[];
 }
 
-/** The model a dataset uses for extraction (null = bioner default). */
+/** The global active extraction model (null active_model = bioner default). */
 export interface ActiveModelResponse {
-  dataset_id: number;
   active_model?: ModelSummary | null;
 }
 
@@ -580,6 +581,27 @@ export interface RunErrorAnalysis {
 export interface TrainingMetric {
   epoch: number;
   loss: number;
+  step?: number | null;
+  eval_loss?: number | null;
+}
+
+/** Per-model detail: training datasets, snapshot stats, base-vs-trained eval. */
+export interface ModelDetailResponse {
+  model_id: number;
+  run_id?: number | null;
+  base_model?: string | null;
+  train_dataset_ids: number[];
+  eval_dataset_ids: number[];
+  train_stats?: {
+    record_count?: number;
+    term_count?: number;
+    label_distribution?: { [label: string]: number };
+    total_steps?: number;
+    val_ratio?: number;
+  } | null;
+  labels: string[];
+  per_label_trained: { [label: string]: { [metric: string]: number } };
+  per_label_baseline: { [label: string]: { [metric: string]: number } };
 }
 
 /** Dataset statistics used by the monitoring dashboard. */
