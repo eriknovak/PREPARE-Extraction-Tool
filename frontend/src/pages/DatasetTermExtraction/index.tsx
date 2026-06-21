@@ -467,16 +467,14 @@ const DatasetTermExtraction: React.FC = () => {
             {!isExtractingDataset && hasTrainedModels && (
               <div className={styles["stats-section__model"]}>
                 <label className={styles["stats-section__model-label"]}>Extraction model:</label>
-                <div className={styles["stats-section__model-select"]}>
-                  <Select
-                    value={activeModelId != null ? String(activeModelId) : "default"}
-                    onValueChange={handleSelectModel}
-                    fullWidth
-                    size="small"
-                    options={modelOptions}
-                    aria-label="Extraction model"
-                  />
-                </div>
+                <Select
+                  value={activeModelId != null ? String(activeModelId) : "default"}
+                  onValueChange={handleSelectModel}
+                  fullWidth={false}
+                  size="small"
+                  options={modelOptions}
+                  aria-label="Extraction model"
+                />
               </div>
             )}
           </div>
