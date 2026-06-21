@@ -223,7 +223,9 @@ def test_list_runs_paginated_and_enriched(client):
     training_service.record_evaluation(
         db, run.id, {"Drug": {"exact_f1": 0.8}, "Dose": {"exact_f1": 0.6}}
     )
-    resp = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/runs?page=1&limit=20")
+    resp = client.get(
+        f"/api/v1/bioner/datasets/{client.dataset_id}/runs?page=1&limit=20"
+    )
     assert resp.status_code == 200
     body = resp.json()
     assert "runs" in body and "pagination" in body
@@ -392,3 +394,104 @@ def test_start_training_snapshots_train_stats(client):
     assert run.train_stats is not None
     assert run.train_stats["record_count"] >= 1
     assert client.dataset_id in run.train_stats["train_dataset_ids"]
+
+
+# ================================================
+# Task 7: global model list + per-model detail
+# ================================================
+
+
+def _make_trained_model_with_run(client):
+    """Create a TrainingRun + linked Model (with path + train_stats) for detail tests."""
+    from app.models_db import Model
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_ids=[client.dataset_id],
+        base_model="urchade/gliner_small-v2.1",
+        labels=["Drug"],
+        val_ratio=0.1,
+        train_stats={"record_count": 1, "term_count": 0, "label_distribution": {}},
+    )
+    # Create Model linked to the run (mirrors complete_run without filesystem I/O)
+    model = Model(
+        name=f"run-{run.id}",
+        version="20240101120000",
+        base_model="urchade/gliner_small-v2.1",
+        path=f"/models/run-{run.id}",
+        dataset_id=client.dataset_id,
+    )
+    db.add(model)
+    db.commit()
+    db.refresh(model)
+    run.model_id = model.id
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    db.refresh(model)
+    return model, run
+
+
+def test_models_list_excludes_baseline_rows_and_is_global(client):
+    """GET /models returns trained models globally; 'Base model' rows are excluded."""
+    from app.models_db import Model
+
+    db = client.session
+
+    # Create a trained model (has a path)
+    trained, _ = _make_trained_model_with_run(client)
+
+    # Create a baseline Model row (no path — same as get_baseline_model creates)
+    baseline = Model(
+        name="Base model",
+        version="baseline",
+        dataset_id=client.dataset_id,
+    )
+    db.add(baseline)
+    db.commit()
+
+    resp = client.get("/api/v1/bioner/models")
+    assert resp.status_code == 200
+    names = [m["name"] for m in resp.json()["models"]]
+
+    assert "Base model" not in names
+    assert trained.name in names
+
+
+def test_models_list_marks_active(client, monkeypatch):
+    """The model set as global active should have is_active == True in the list."""
+    from app.services import training_service
+
+    model = _make_trained_model(client)
+
+    db = client.session
+    training_service.set_global_active_model(db, model.id)
+
+    resp = client.get("/api/v1/bioner/models")
+    assert resp.status_code == 200
+    summaries = resp.json()["models"]
+    match = next(s for s in summaries if s["id"] == model.id)
+    assert match["is_active"] is True
+
+
+def test_model_detail_returns_train_stats_and_base_vs_trained(client):
+    """GET /models/{id}/detail returns run info, train_stats, per_label keys."""
+    model, run = _make_trained_model_with_run(client)
+
+    resp = client.get(f"/api/v1/bioner/models/{model.id}/detail")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["model_id"] == model.id
+    assert body["run_id"] == run.id
+    assert "train_stats" in body
+    assert "per_label_trained" in body
+    assert "per_label_baseline" in body
+
+
+def test_model_detail_404_for_unknown_model(client):
+    """GET /models/99999/detail returns 404."""
+    resp = client.get("/api/v1/bioner/models/99999/detail")
+    assert resp.status_code == 404

@@ -850,12 +850,30 @@ class ModelSummary(BaseModel):
     created_at: Optional[datetime] = None
     # Overall macro-F1 across labels, if the model has been evaluated.
     score: Optional[float] = None
+    run_id: Optional[int] = None  # links a model to its training run
+    is_active: bool = False  # is this the global active model?
 
 
 class ModelsOutput(BaseModel):
     """List of trained models available for selection."""
 
     models: List[ModelSummary]
+
+
+class ModelDetailResponse(BaseModel):
+    """Detail for one trained model (per-model view; no cross-model comparison)."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: int
+    run_id: Optional[int] = None
+    base_model: Optional[str] = None
+    train_dataset_ids: List[int] = []
+    eval_dataset_ids: List[int] = []
+    train_stats: Optional[dict] = None
+    labels: List[str] = []
+    per_label_trained: Dict[str, Dict[str, Any]] = {}
+    per_label_baseline: Dict[str, Dict[str, Any]] = {}
 
 
 class ActiveModelResponse(BaseModel):
@@ -865,7 +883,7 @@ class ActiveModelResponse(BaseModel):
 
 
 class SetActiveModelRequest(BaseModel):
-    """Set (``model_id``) or clear (``null``) a dataset's active extraction model."""
+    """Set (``model_id``) or clear (``null``) the global active extraction model."""
 
     model_config = ConfigDict(protected_namespaces=())
 

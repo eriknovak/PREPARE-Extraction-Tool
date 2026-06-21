@@ -17,7 +17,10 @@ from sqlmodel import Session, func, select
 from app.core.database import Dataset, User, engine, get_session
 from app.core.settings import settings
 from app.interfaces import Entity, LabelsInput, NERRequest
-from app.library.record_processing import auto_link_entities_for_record, link_dates_for_record
+from app.library.record_processing import (
+    auto_link_entities_for_record,
+    link_dates_for_record,
+)
 from app.models_db import (
     ExtractionJob,
     Model,
@@ -36,6 +39,7 @@ from app.schemas import (
     GLiNERTrainingRequest,
     MessageOutput,
     LabelErrorAnalysis,
+    ModelDetailResponse,
     ModelSummary,
     ModelsOutput,
     RunErrorAnalysisResponse,
@@ -80,6 +84,7 @@ def extract_entities(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Extract service unavailable",
         )
+
 
 @router.post("/{dataset_id}/records/{record_id}/extract", response_model=MessageOutput)
 def extract_entities_from_record(
@@ -231,12 +236,7 @@ def extract_entities_from_record(
     ex_terms: List[SourceTermEx] = []
 
     for entity in entities:
-        key = (
-            entity["text"],
-            entity["label"],
-            entity["start"],
-            entity["end"]
-        )
+        key = (entity["text"], entity["label"], entity["start"], entity["end"])
 
         if key in seen_in_response:
             continue
@@ -342,7 +342,7 @@ def extract_entities_from_records(
         .where(
             ExtractionJob.dataset_id == dataset_id,
             ExtractionJob.model_id == model_id,
-            ExtractionJob.currently_used == True  # noqa: E712
+            ExtractionJob.currently_used == True,  # noqa: E712
         )
         .order_by(ExtractionJob.created_at.desc())
     ).first()
@@ -381,7 +381,7 @@ def extract_entities_from_records(
         total=total,
         completed=0,
         status="pending",
-        currently_used=True
+        currently_used=True,
     )
 
     db.add(job)
@@ -429,9 +429,14 @@ def get_active_extraction_job(
     """Return the latest pending/running extraction job for the dataset, or null if none."""
     dataset = db.get(Dataset, dataset_id)
     if dataset is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found"
+        )
     if dataset.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this dataset")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this dataset",
+        )
 
     job = db.exec(
         select(ExtractionJob)
@@ -538,7 +543,9 @@ def cancel_extraction_job(
     return MessageOutput(message="Cancellation requested")
 
 
-def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], model_id: int):
+def run_dataset_extraction_job(
+    job_id: int, dataset_id: int, labels: List[str], model_id: int
+):
     """Background task that extracts entities for each unreviewed record."""
 
     with Session(engine) as session:
@@ -613,18 +620,13 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
                     select(SourceTerm).where(SourceTerm.record_id == record.id)
                 ).all()
             }
-            
+
             seen_in_response = set()
 
             new_terms: List[SourceTerm] = []
             ex_terms: List[SourceTermEx] = []
             for entity in entities:
-                key = (
-                    entity["text"],
-                    entity["label"],
-                    entity["start"],
-                    entity["end"]
-                )
+                key = (entity["text"], entity["label"], entity["start"], entity["end"])
 
                 if key in seen_in_response:
                     continue
@@ -637,7 +639,7 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
                         start_position=entity["start"],
                         end_position=entity["end"],
                         score=entity.get("score"),
-                        model_id=model_id
+                        model_id=model_id,
                     )
                 )
 
@@ -655,7 +657,7 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
                         automatically_extracted=True,
                     )
                 )
-                
+
             if new_terms:
                 session.add_all(new_terms)
                 session.flush()
@@ -680,19 +682,16 @@ def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str], 
 # NER model routes
 # ================================================
 
+
 def get_or_create_model(metadata: dict, db: Session):
     statement = select(Model).where(
-        Model.name == metadata["name"],
-        Model.version == metadata["version"]
+        Model.name == metadata["name"], Model.version == metadata["version"]
     )
     existing = db.exec(statement).first()
     if existing:
         return existing
-    
-    new_model = Model(
-        name=metadata["name"],
-        version=metadata["version"]
-    )
+
+    new_model = Model(name=metadata["name"], version=metadata["version"])
 
     db.add(new_model)
     db.commit()
@@ -753,15 +752,69 @@ def list_models(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """List the caller's trained models (those with an artifact path) for selection."""
+    """List all trained models (instance-global, since the active model is global).
+
+    Excludes per-dataset 'Base model' baseline rows (they are comparison anchors,
+    not selectable models). Each summary carries its run id and whether it is the
+    global active model.
+    """
+    active_model_id = training_service.get_app_settings(db).active_model_id
     models = db.exec(
         select(Model)
-        .join(Dataset, Dataset.id == Model.dataset_id)
-        .where(Dataset.user_id == current_user.id)
         .where(Model.path.is_not(None))
+        .where(Model.name != training_service.BASELINE_MODEL_NAME)
         .order_by(Model.created_at.desc())
     ).all()
-    return ModelsOutput(models=[_model_summary(db, m) for m in models])
+    summaries = []
+    for m in models:
+        summary = _model_summary(db, m)
+        summary.run_id = m.training_run.id if m.training_run else None
+        summary.is_active = m.id == active_model_id
+        summaries.append(summary)
+    return ModelsOutput(models=summaries)
+
+
+@router.get("/models/{model_id}/detail", response_model=ModelDetailResponse)
+def model_detail(
+    model_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Per-model detail: training datasets, snapshot stats, labels, and the
+    base-vs-trained per-label evaluation (same split, the only valid comparison)."""
+    model = db.get(Model, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    run = model.training_run
+    per_label_trained = _scores_only(evaluation_service.get_per_label(db, model.id))
+    per_label_baseline = {}
+    train_ids: list[int] = []
+    eval_ids: list[int] = []
+    train_stats = None
+    labels: list[str] = []
+    if run is not None:
+        train_ids = training_service.get_dataset_ids(db, run.id, role="train") or [
+            run.dataset_id
+        ]
+        eval_ids = training_service.get_dataset_ids(db, run.id, role="eval") or []
+        train_stats = run.train_stats
+        labels = run.labels or []
+        baseline = training_service.get_baseline_model(db, run.dataset_id)
+        if baseline is not None:
+            per_label_baseline = _scores_only(
+                evaluation_service.get_per_label(db, baseline.id)
+            )
+    return ModelDetailResponse(
+        model_id=model.id,
+        run_id=run.id if run else None,
+        base_model=model.base_model,
+        train_dataset_ids=train_ids,
+        eval_dataset_ids=eval_ids,
+        train_stats=train_stats,
+        labels=labels,
+        per_label_trained=per_label_trained,
+        per_label_baseline=per_label_baseline,
+    )
 
 
 def _activate_on_bioner(model_path: Optional[str]) -> None:
@@ -1039,9 +1092,7 @@ def list_runs(
 ):
     """Return a dataset's training runs, newest first, paginated."""
     total = db.exec(
-        select(func.count(TrainingRun.id)).where(
-            TrainingRun.dataset_id == dataset_id
-        )
+        select(func.count(TrainingRun.id)).where(TrainingRun.dataset_id == dataset_id)
     ).one()
     offset = (page - 1) * limit
     runs = db.exec(
