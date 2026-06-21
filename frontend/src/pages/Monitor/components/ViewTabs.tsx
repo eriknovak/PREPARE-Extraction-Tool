@@ -5,7 +5,7 @@ import type { MonitorView } from "../hooks/useMonitor";
 import styles from "./ViewTabs.module.css";
 
 const TABS: { id: MonitorView; label: string }[] = [
-  { id: "comparison", label: "Comparison" },
+  { id: "models", label: "Models" },
   { id: "training", label: "Training" },
 ];
 

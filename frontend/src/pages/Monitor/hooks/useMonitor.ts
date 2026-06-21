@@ -5,7 +5,7 @@ import type { EvaluationResponse, MonitorDataset, MonitorDatasetStats, MonitorRu
 
 export const DEFAULT_MODEL = "urchade/gliner_small-v2.1";
 
-export type MonitorView = "comparison" | "training";
+export type MonitorView = "models" | "training";
 
 /**
  * The shared Monitor contract. Both `index.tsx` and the view components

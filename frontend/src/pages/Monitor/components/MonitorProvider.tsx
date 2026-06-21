@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 
 import { useToast } from "@hooks/useToast";
 import {
-  getAllEvaluations,
   getDatasetRuns,
   getDatasets,
   getMultiDatasetStats,
@@ -32,7 +31,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
   const [token] = useState<string | null>(() => localStorage.getItem("access_token"));
 
-  const [activeView, setActiveView] = useState<MonitorView>("comparison");
+  const [activeView, setActiveView] = useState<MonitorView>("models");
 
   const [progress, setProgress] = useState(0);
   const [, setTotalEpochs] = useState(4);
@@ -40,7 +39,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const [datasets, setDatasets] = useState<MonitorDataset[]>([]);
   const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
   const [evaluations, setEvaluations] = useState<EvaluationResponse[]>([]);
-  const [evaluationsLoading, setEvaluationsLoading] = useState(false);
+  const [evaluationsLoading] = useState(false);
 
   // Training datasets (multi-select) + optional eval datasets, with their
   // aggregated stats. Default to the single top-level selected dataset.
@@ -145,32 +144,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
       cancelled = true;
     };
   }, [trainingDatasetIds, token]);
-
-  // ------------------ ALL RUN EVAL (comparison) ------------------
-
-  useEffect(() => {
-    if (!selectedDatasetId || !token) return;
-
-    let cancelled = false;
-    setEvaluationsLoading(true);
-    getAllEvaluations(selectedDatasetId)
-      .then((data) => {
-        if (cancelled) return;
-        setEvaluations(Array.isArray(data) ? data : []);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setEvaluations([]);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setEvaluationsLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDatasetId, token]);
 
   // ------------------ RUNS ------------------
 
