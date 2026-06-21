@@ -101,13 +101,9 @@
 }
 
 .stats-section__model-label {
-  font-size: 0.8125rem;
+  font-weight: 600;
   color: #6b7280;
   white-space: nowrap;
-}
-
-.stats-section__model-select {
-  width: 260px;
 }
 
 /* Extraction Progress (inline with stats) */
