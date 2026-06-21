@@ -369,6 +369,12 @@ class TrainingRun(SQLModel, table=True):
         default=None, foreign_key="model.id", ondelete="SET NULL"
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Snapshot of the training datasets' stats AT TRAINING TIME (datasets mutate
+    # afterward). Shape: {train_dataset_ids, eval_dataset_ids, record_count,
+    # term_count, label_distribution, train_size, eval_size, val_ratio}.
+    train_stats: Optional[dict] = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
 
     metrics: list["TrainingMetric"] = Relationship(
         back_populates="run",
