@@ -3,15 +3,13 @@ import type { ReactNode } from "react";
 
 import { useToast } from "@hooks/useToast";
 import {
-  getDatasetRuns,
   getDatasets,
   getMultiDatasetStats,
-  getRunEvaluation,
   getTrainingWSUrl,
   startTraining as apiStartTraining,
   stopTraining as apiStopTraining,
 } from "@api/monitoring";
-import type { EvaluationResponse, MonitorDataset, MonitorDatasetStats, MonitorRun, TrainingMetric } from "types";
+import type { MonitorDataset, MonitorDatasetStats, TrainingMetric } from "types";
 
 import { DEFAULT_MODEL, MonitorContext } from "../hooks/useMonitor";
 import type { MonitorContextValue, MonitorView } from "../hooks/useMonitor";
@@ -39,27 +37,19 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const [totalSteps, setTotalSteps] = useState(0);
 
   const [datasets, setDatasets] = useState<MonitorDataset[]>([]);
-  const [selectedDatasetId, setSelectedDatasetId] = useState<number | null>(null);
-  const [evaluations, setEvaluations] = useState<EvaluationResponse[]>([]);
-  const [evaluationsLoading] = useState(false);
 
   // Training datasets (multi-select) + optional eval datasets, with their
-  // aggregated stats. Default to the single top-level selected dataset.
+  // aggregated stats.
   const [trainingDatasetIds, setTrainingDatasetIds] = useState<number[]>([]);
   const [evalDatasetIds, setEvalDatasetIds] = useState<number[]>([]);
   const [trainingStats, setTrainingStats] = useState<MonitorDatasetStats | null>(null);
 
-  const [runs, setRuns] = useState<MonitorRun[]>([]);
-  const [selectedRun, setSelectedRun] = useState<number | null>(null);
   const [valSplitRatio, setValSplitRatio] = useState<number>(0.1);
 
   // Hyperparameters (defaults match the bioner trainer's current values).
   const [numEpochs, setNumEpochs] = useState<number>(4);
   const [learningRate, setLearningRate] = useState<number>(5e-6);
   const [trainBatchSize, setTrainBatchSize] = useState<number>(8);
-
-  const [evaluation, setEvaluation] = useState<EvaluationResponse | null>(null);
-  const [evaluationLoading, setEvaluationLoading] = useState(false);
 
   const [trainingMetrics, setTrainingMetrics] = useState<TrainingMetric[]>([]);
   const [isTraining, setIsTraining] = useState(false);
@@ -85,22 +75,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     isTrainingRef.current = isTraining;
   }, [isTraining]);
 
-  // ------------------ RESET ------------------
-
-  const resetAll = () => {
-    setRuns([]);
-    setSelectedRun(null);
-    setEvaluation(null);
-    setTrainingMetrics([]);
-    setIsTraining(false);
-    setTrainingStatus("");
-    setSelectedLabels([]);
-    setEvaluations([]);
-    setProgress(0);
-    setCurrentStep(0);
-    setTotalSteps(0);
-  };
-
   // ------------------ DATASETS ------------------
 
   useEffect(() => {
@@ -118,14 +92,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
     fetchDatasets();
   }, [token]);
-
-  const selectDataset = (id: number) => {
-    setSelectedDatasetId(id);
-    resetAll();
-    // Default training to the picked dataset; clear any eval datasets.
-    setTrainingDatasetIds([id]);
-    setEvalDatasetIds([]);
-  };
 
   // ------------------ TRAINING DATASET STATS (aggregated) ------------------
 
@@ -151,69 +117,12 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     };
   }, [trainingDatasetIds, token]);
 
-  // ------------------ RUNS ------------------
-
-  useEffect(() => {
-    if (!selectedDatasetId || !token) return;
-
-    let cancelled = false;
-
-    const fetchRuns = async () => {
-      try {
-        const data = await getDatasetRuns(selectedDatasetId);
-        if (cancelled) return;
-        const runsArray = Array.isArray(data) ? data : [];
-
-        setRuns(runsArray);
-        setSelectedRun(runsArray?.[0]?.run_id ?? null);
-      } catch (e) {
-        if (cancelled) return;
-        console.error(e);
-        setRuns([]);
-        setSelectedRun(null);
-      }
-    };
-
-    fetchRuns();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedDatasetId, token]);
-
-  // ------------------ SINGLE EVAL ------------------
-
-  useEffect(() => {
-    if (!selectedRun || !token) {
-      setEvaluation(null);
-      return;
-    }
-
-    let cancelled = false;
-    setEvaluationLoading(true);
-    getRunEvaluation(selectedRun)
-      .then((data) => {
-        if (cancelled) return;
-        setEvaluation(data);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setEvaluation(null);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setEvaluationLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedRun, token]);
-
   // ------------------ WEBSOCKET ------------------
 
+  // The training-event stream is global (events are broadcast for any run), so
+  // it connects whenever the user is authenticated — not tied to a dataset.
   useEffect(() => {
-    if (!selectedDatasetId || !token) return;
+    if (!token) return;
     let closed = false;
 
     const handleMessage = (event: MessageEvent) => {
@@ -353,7 +262,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
       wsRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDatasetId, token]);
+  }, [token]);
 
   // ------------------ TRAINING ------------------
 
@@ -401,18 +310,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     setActiveView,
 
     datasets,
-    selectedDatasetId,
-    selectDataset,
     trainingStats,
-
-    runs,
-    selectedRun,
-    setSelectedRun,
-
-    evaluation,
-    evaluationLoading,
-    evaluations,
-    evaluationsLoading,
 
     isTraining,
     progress,

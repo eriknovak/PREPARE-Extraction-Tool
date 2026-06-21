@@ -2,15 +2,12 @@ import { apiRequest } from "./client";
 import type {
   ActiveModelResponse,
   DatasetsOutput,
-  EvaluationResponse,
   MessageOutput,
   ModelDetailResponse,
   ModelsOutput,
   ModelSummary,
   MonitorDatasetStats,
   MonitorRun,
-  RunErrorAnalysis,
-  RunsOutput,
   RunUpdate,
   TrainingMetric,
 } from "types";
@@ -37,17 +34,6 @@ export function getMultiDatasetStats(datasetIds: number[]) {
 
 /* ---------------- RUNS ---------------- */
 
-/** Newest page of runs as a flat array (used by the provider for overlays/pickers). */
-export async function getDatasetRuns(datasetId: number, page = 1, limit = 20) {
-  const res = await apiRequest<RunsOutput>(`/bioner/datasets/${datasetId}/runs?page=${page}&limit=${limit}`);
-  return res.runs;
-}
-
-/** Paginated runs (with pagination metadata) for the comparison run table. */
-export function getDatasetRunsPaged(datasetId: number, page = 1, limit = 20) {
-  return apiRequest<RunsOutput>(`/bioner/datasets/${datasetId}/runs?page=${page}&limit=${limit}`);
-}
-
 /** Rename a run and/or mark it as the dataset's preferred run. */
 export function updateRun(runId: number, payload: RunUpdate) {
   return apiRequest<MonitorRun>(`/bioner/runs/${runId}`, {
@@ -61,24 +47,6 @@ export function deleteRun(runId: number) {
   return apiRequest<MessageOutput>(`/bioner/runs/${runId}`, {
     method: "DELETE",
   });
-}
-
-export function getRunEvaluation(runId: number) {
-  return apiRequest<EvaluationResponse>(`/bioner/runs/${runId}/evaluation`);
-}
-
-export function getAllRunEvaluations(datasetId: number) {
-  return apiRequest<EvaluationResponse[]>(`/bioner/datasets/${datasetId}/runs/evaluations`);
-}
-
-/** Per-label error analysis (confusion counts + example errors) for a run. */
-export function getRunErrorAnalysis(runId: number) {
-  return apiRequest<RunErrorAnalysis>(`/bioner/runs/${runId}/error-analysis`);
-}
-
-/** Alias kept for the heatmap view; uses the per-dataset evaluations endpoint. */
-export function getAllEvaluations(datasetId: number) {
-  return getAllRunEvaluations(datasetId);
 }
 
 /** Per-epoch loss curve for a single run, ordered by epoch. */

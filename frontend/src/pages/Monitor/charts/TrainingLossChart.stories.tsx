@@ -16,7 +16,6 @@ type Story = StoryObj<typeof meta>;
 export const TrainOnly: Story = {
   args: {
     isTraining: false,
-    hasRuns: true,
     metrics: [
       { epoch: 1, loss: 0.95, step: 10 },
       { epoch: 1, loss: 0.82, step: 20 },
@@ -34,7 +33,6 @@ export const TrainOnly: Story = {
 export const TrainAndEval: Story = {
   args: {
     isTraining: false,
-    hasRuns: true,
     metrics: [
       { epoch: 1, loss: 0.92, step: 10, eval_loss: 0.98 },
       { epoch: 1, loss: 0.78, step: 20, eval_loss: 0.85 },
@@ -51,7 +49,6 @@ export const TrainAndEval: Story = {
 export const LiveTraining: Story = {
   args: {
     isTraining: true,
-    hasRuns: true,
     metrics: [],
   },
 };
