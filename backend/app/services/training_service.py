@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from sqlmodel import Session, select
 
 from app.models_db import (
+    AppSettings,
     Model,
     ModelTrainRecordLink,
     TrainingMetric,
@@ -424,6 +425,35 @@ def update_run(
     db.commit()
     db.refresh(run)
     return run
+
+
+def get_app_settings(db: Session) -> AppSettings:
+    """Return the singleton AppSettings row (id=1), creating it if missing."""
+    settings_row = db.get(AppSettings, 1)
+    if settings_row is None:
+        settings_row = AppSettings(id=1, active_model_id=None)
+        db.add(settings_row)
+        db.commit()
+        db.refresh(settings_row)
+    return settings_row
+
+
+def get_global_active_model(db: Session) -> Optional[Model]:
+    """Return the globally selected extraction Model, or None (= bioner default)."""
+    row = get_app_settings(db)
+    if row.active_model_id is None:
+        return None
+    return db.get(Model, row.active_model_id)
+
+
+def set_global_active_model(db: Session, model_id: Optional[int]) -> AppSettings:
+    """Set or clear the global active extraction model."""
+    row = get_app_settings(db)
+    row.active_model_id = model_id
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
 
 
 def delete_run(db: Session, run_id: int) -> bool:
