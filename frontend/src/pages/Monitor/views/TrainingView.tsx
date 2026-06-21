@@ -39,7 +39,6 @@ const SPLIT_OPTIONS = [
 const TrainingView = () => {
   const {
     datasets,
-    selectedDatasetId,
     trainingStats,
     trainingDatasetIds,
     setTrainingDatasetIds,
@@ -72,10 +71,6 @@ const TrainingView = () => {
   } = useMonitor();
 
   const [showAdvanced, setShowAdvanced] = useState(false);
-
-  if (!selectedDatasetId) {
-    return <Card title="Training">Select a dataset to train a model.</Card>;
-  }
 
   const datasetOptions = datasets.map((d) => ({ value: String(d.id), label: d.name }));
   // Eval datasets are distinct from training datasets (overlaps are dropped server-side).
