@@ -1211,9 +1211,18 @@ def run_metrics(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """Return a run's per-epoch loss curve, ordered by epoch."""
+    """Return a run's loss curve ordered by step (nulls last) then epoch."""
     metrics = training_service.get_run_metrics(db, run_id)
-    return [TrainingMetricPoint(epoch=m.epoch, loss=m.loss) for m in metrics]
+    ordered = sorted(
+        metrics,
+        key=lambda m: (m.step is None, m.step if m.step is not None else 0, m.epoch),
+    )
+    return [
+        TrainingMetricPoint(
+            epoch=m.epoch, loss=m.loss, step=m.step, eval_loss=m.eval_loss
+        )
+        for m in ordered
+    ]
 
 
 @router.get("/datasets/{dataset_id}/runs/evaluations")

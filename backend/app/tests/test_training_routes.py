@@ -495,3 +495,77 @@ def test_model_detail_404_for_unknown_model(client):
     """GET /models/99999/detail returns 404."""
     resp = client.get("/api/v1/bioner/models/99999/detail")
     assert resp.status_code == 404
+
+
+# ================================================
+# Task 9: step-indexed train/eval metrics + total_steps
+# ================================================
+
+
+def _make_pending_run(client):
+    """Create a pending TrainingRun and return its id."""
+    from app.models_db import TrainingRun
+
+    db = client.session
+    run = TrainingRun(
+        dataset_id=client.dataset_id,
+        base_model="m",
+        labels=["Drug"],
+        val_ratio=0.1,
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return run.id
+
+
+def test_train_log_event_persists_step_metric(client):
+    """POST train_log event with step → metrics endpoint returns a row with that step/loss."""
+    run_id = _make_pending_run(client)
+    payload = {
+        "type": "train_log",
+        "run_id": run_id,
+        "step": 10,
+        "epoch": 1.0,
+        "loss": 0.5,
+    }
+    r = client.post("/api/v1/bioner/internal/training-events", json=payload)
+    assert r.status_code == 200
+    metrics = client.get(f"/api/v1/bioner/runs/{run_id}/metrics").json()
+    assert any(m["step"] == 10 and m["loss"] == 0.5 for m in metrics)
+
+
+def test_eval_step_persists_eval_loss(client):
+    """POST train_log event with eval_loss → metrics endpoint returns a row with eval_loss."""
+    run_id = _make_pending_run(client)
+    payload = {
+        "type": "train_log",
+        "run_id": run_id,
+        "step": 20,
+        "epoch": 1.0,
+        "eval_loss": 0.4,
+    }
+    client.post("/api/v1/bioner/internal/training-events", json=payload)
+    metrics = client.get(f"/api/v1/bioner/runs/{run_id}/metrics").json()
+    assert any(m["step"] == 20 and m["eval_loss"] == 0.4 for m in metrics)
+
+
+def test_training_start_sets_total_steps(client):
+    """POST training_start event with total_steps → run.train_stats["total_steps"] is set."""
+    from app.models_db import TrainingRun
+
+    run_id = _make_pending_run(client)
+    payload = {
+        "type": "training_start",
+        "run_id": run_id,
+        "num_epochs": 4,
+        "total_steps": 200,
+    }
+    r = client.post("/api/v1/bioner/internal/training-events", json=payload)
+    assert r.status_code == 200
+    db = client.session
+    db.expire_all()
+    run = db.get(TrainingRun, run_id)
+    assert run is not None
+    assert run.train_stats is not None
+    assert run.train_stats["total_steps"] == 200

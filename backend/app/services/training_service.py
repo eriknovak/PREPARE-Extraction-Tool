@@ -144,6 +144,18 @@ def add_step_metric(
     db.commit()
 
 
+def set_total_steps(db: Session, run_id: int, total_steps: int) -> None:
+    """Record total optimizer steps on the run (under train_stats) for progress %."""
+    run = db.get(TrainingRun, run_id)
+    if run is None:
+        return
+    stats = dict(run.train_stats or {})
+    stats["total_steps"] = total_steps
+    run.train_stats = stats
+    db.add(run)
+    db.commit()
+
+
 def get_run_metrics(db: Session, run_id: int) -> List[TrainingMetric]:
     """Return a run's per-epoch loss points, ordered by epoch.
 

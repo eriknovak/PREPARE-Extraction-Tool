@@ -819,6 +819,8 @@ class RunErrorAnalysisResponse(BaseModel):
 class TrainingMetricPoint(BaseModel):
     epoch: int
     loss: Optional[float] = None
+    step: Optional[int] = None
+    eval_loss: Optional[float] = None
 
 
 class FullStatsRequest(BaseModel):
