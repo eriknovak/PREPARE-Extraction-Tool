@@ -10,9 +10,4 @@ export type { HeatmapProps, HeatmapCell } from "./Heatmap";
 export { default as ChartState } from "./ChartState";
 export type { ChartStateProps, ChartStateVariant } from "./ChartState";
 
-export {
-  CHART_TOKENS,
-  CHART_PALETTE,
-  CHART_FONT_FAMILY,
-  PREPARE_CHART_THEME,
-} from "./theme";
+export { CHART_TOKENS, CHART_PALETTE, CHART_FONT_FAMILY, PREPARE_CHART_THEME } from "./theme";

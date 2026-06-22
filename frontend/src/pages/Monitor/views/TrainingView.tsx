@@ -41,8 +41,7 @@ const GLINER_BASELINES = [
 ] as const;
 
 // Compact one-line label for the dropdown: "Multilingual (default) · 289M · ~8 GB VRAM".
-const formatBaselineLabel = (b: (typeof GLINER_BASELINES)[number]) =>
-  `${b.label} · ${b.params} · ~${b.vramGB} GB VRAM`;
+const formatBaselineLabel = (b: (typeof GLINER_BASELINES)[number]) => `${b.label} · ${b.params} · ~${b.vramGB} GB VRAM`;
 
 const BASELINE_SELECT_OPTIONS = [
   ...GLINER_BASELINES.map((b) => ({ value: b.value, label: formatBaselineLabel(b) })),
@@ -157,7 +156,9 @@ const TrainingView = () => {
       <Card title="Training configuration">
         {/* Model selector */}
         <div className={styles.field}>
-          <label className={styles.field__label} htmlFor="base-model-select">Base model</label>
+          <label className={styles.field__label} htmlFor="base-model-select">
+            Base model
+          </label>
 
           <Select
             id="base-model-select"

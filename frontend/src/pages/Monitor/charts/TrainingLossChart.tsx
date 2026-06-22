@@ -30,9 +30,7 @@ const TrainingLossChart = ({ metrics, isTraining, onConfigure }: Props) => {
         valueFormatter={formatLoss}
         series={[
           { name: "Train loss", data: loss, color: CHART.loss, area: true },
-          ...(hasEvalLoss
-            ? [{ name: "Eval loss", data: evalLoss, color: CHART.relaxedF1 }]
-            : []),
+          ...(hasEvalLoss ? [{ name: "Eval loss", data: evalLoss, color: CHART.relaxedF1 }] : []),
         ]}
       />
     );

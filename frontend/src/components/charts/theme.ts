@@ -21,8 +21,7 @@ export const CHART_TOKENS = {
   surfaceAlt: "#f9fafb",
 } as const;
 
-export const CHART_FONT_FAMILY =
-  "'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif";
+export const CHART_FONT_FAMILY = "'Nunito Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif";
 
 /** Default categorical palette for multi-series charts. */
 export const CHART_PALETTE = [

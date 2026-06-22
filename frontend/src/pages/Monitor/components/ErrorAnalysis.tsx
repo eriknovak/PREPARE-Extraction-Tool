@@ -15,8 +15,7 @@ const CHART_HEIGHT = 200;
 const AGGREGATE_LABELS = new Set(["micro avg", "macro avg", "weighted avg"]);
 
 /** Format a 0–1 score as a percentage, or a dash when absent. */
-const formatPct = (value?: number | null): string =>
-  typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—";
+const formatPct = (value?: number | null): string => (typeof value === "number" ? `${(value * 100).toFixed(1)}%` : "—");
 
 /** A single example error: context text with the gold (missed) or predicted
  * (wrong) span highlighted. Falls back to plain text + span when offsets are
@@ -26,8 +25,7 @@ const ExampleItem = ({ example }: { example: ErrorExample }) => {
   const span = example.gold ?? example.predicted;
   const spanClass = isMissed ? styles.goldSpan : styles.predSpan;
 
-  const offsetsUsable =
-    span !== null && span.start >= 0 && span.end <= example.text.length && span.start < span.end;
+  const offsetsUsable = span !== null && span.start >= 0 && span.end <= example.text.length && span.start < span.end;
 
   return (
     <div className={styles.example}>

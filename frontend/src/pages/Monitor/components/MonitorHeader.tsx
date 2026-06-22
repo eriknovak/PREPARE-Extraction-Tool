@@ -20,21 +20,18 @@ const MonitorHeader = () => {
             <p>Train custom NER models and pick which one is used for extraction. Switch between:</p>
             <ul>
               <li>
-                <strong>Models</strong> — browse trained models, inspect each one's training loss and
-                per-label evaluation, and select the global model used for extraction.
+                <strong>Models</strong> — browse trained models, inspect each one's training loss and per-label
+                evaluation, and select the global model used for extraction.
               </li>
               <li>
-                <strong>Training</strong> — choose training datasets and labels, configure the base
-                model and hyperparameters, then launch a run and follow its live loss and evaluation
-                curves.
+                <strong>Training</strong> — choose training datasets and labels, configure the base model and
+                hyperparameters, then launch a run and follow its live loss and evaluation curves.
               </li>
             </ul>
           </span>
         </span>
       </h1>
-      <p className={styles.subtitle}>
-        Train NER models, follow live training metrics, and compare run performance.
-      </p>
+      <p className={styles.subtitle}>Train NER models, follow live training metrics, and compare run performance.</p>
     </header>
   );
 };

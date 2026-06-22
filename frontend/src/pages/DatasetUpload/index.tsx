@@ -52,9 +52,7 @@ const DatasetUpload = () => {
 
   // Drop relations whose labels no longer exist when labels change
   useEffect(() => {
-    setLabelRelations((prev) =>
-      prev.filter((r) => labels.includes(r.from_label) && labels.includes(r.to_label))
-    );
+    setLabelRelations((prev) => prev.filter((r) => labels.includes(r.from_label) && labels.includes(r.to_label)));
   }, [labels]);
 
   const addRelation = useCallback(() => {
@@ -342,8 +340,8 @@ const DatasetUpload = () => {
                 time.
               </p>
               <p>
-                <strong>Label relationships:</strong> (optional) Check this if some labels are semantically related.
-                For each pair you define, annotators will be able to link individual annotations of those labels to each
+                <strong>Label relationships:</strong> (optional) Check this if some labels are semantically related. For
+                each pair you define, annotators will be able to link individual annotations of those labels to each
                 other using the &ldquo;Link&rdquo; button in the annotation panel.
               </p>
               <p>Maximum file size: 2GB. Supported formats: .csv, .json</p>

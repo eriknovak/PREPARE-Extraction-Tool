@@ -90,9 +90,9 @@ const LinkArrowOverlay: React.FC<LinkArrowOverlayProps> = ({
 
       // X anchors use the center of the relevant line box, not the union bounding box
       const x1First = fromFirst.left + fromFirst.width / 2 - containerRect.left;
-      const x1Last  = fromLast.left  + fromLast.width  / 2 - containerRect.left;
-      const x2First = toFirst.left   + toFirst.width   / 2 - containerRect.left;
-      const x2Last  = toLast.left    + toLast.width    / 2 - containerRect.left;
+      const x1Last = fromLast.left + fromLast.width / 2 - containerRect.left;
+      const x2First = toFirst.left + toFirst.width / 2 - containerRect.left;
+      const x2Last = toLast.left + toLast.width / 2 - containerRect.left;
 
       const sameLine = Math.abs(y1Top - y2Top) < SAME_LINE_THRESHOLD;
 
@@ -122,21 +122,12 @@ const LinkArrowOverlay: React.FC<LinkArrowOverlayProps> = ({
   return (
     <svg className={styles["link-arrow-overlay"]} aria-hidden="true">
       <defs>
-        <marker
-          id={MARKER_ID}
-          markerWidth="6"
-          markerHeight="6"
-          refX="5"
-          refY="3"
-          orient="auto"
-        >
+        <marker id={MARKER_ID} markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
           <path d="M 0 0 L 6 3 L 0 6 Z" fill={ARC_COLOR} />
         </marker>
       </defs>
       {arcs.map((arc) => {
-        const isHighlighted =
-          hoveredTermId === arc.link.from_term_id ||
-          hoveredTermId === arc.link.to_term_id;
+        const isHighlighted = hoveredTermId === arc.link.from_term_id || hoveredTermId === arc.link.to_term_id;
 
         return (
           <path

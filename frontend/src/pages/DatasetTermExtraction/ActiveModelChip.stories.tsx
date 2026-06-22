@@ -9,7 +9,13 @@ const meta: Meta<typeof ActiveModelChip> = {
   parameters: {
     layout: "centered",
   },
-  decorators: [(Story) => <MemoryRouter><Story /></MemoryRouter>],
+  decorators: [
+    (Story) => (
+      <MemoryRouter>
+        <Story />
+      </MemoryRouter>
+    ),
+  ],
 };
 
 export default meta;

@@ -35,7 +35,11 @@ export function useSourceTerms({
       setSelectedRecordTerms(refreshed.source_terms);
       await fetchStats();
       // Optionally, return the new term (find by value/label)
-      return refreshed.source_terms.find(t => t.value === response.source_term.value && t.label === response.source_term.label) ?? response.source_term;
+      return (
+        refreshed.source_terms.find(
+          (t) => t.value === response.source_term.value && t.label === response.source_term.label
+        ) ?? response.source_term
+      );
     },
     [datasetId, selectedRecordId, setSelectedRecordTerms, fetchStats]
   );
