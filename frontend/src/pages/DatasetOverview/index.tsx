@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import classNames from "classnames";
 import Layout from "@/components/Layout";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -17,7 +17,6 @@ import { faObjectGroup, faMapLocationDot, faFilePen, faArrowLeft } from "@fortaw
 import { useDatasetExtractionJob } from "@/hooks/useDatasetExtractionJob";
 
 import styles from "./styles.module.css";
-
 
 // ================================================
 // Helper functions
@@ -60,11 +59,23 @@ const DatasetOverview = () => {
 
   const parsedDatasetId = datasetId ? parseInt(datasetId, 10) : 0;
 
+  // Tracks whether the component is still mounted so async callbacks can avoid
+  // setState-after-unmount when refetching the overview after an action.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   const extraction = useDatasetExtractionJob(parsedDatasetId);
 
   usePageTitle(overview?.dataset.name || "Dataset Overview");
 
   useEffect(() => {
+    let ignore = false;
+
     const fetchOverview = async () => {
       if (!parsedDatasetId) return;
 
@@ -72,15 +83,21 @@ const DatasetOverview = () => {
         setIsLoading(true);
         setError(null);
         const data = await api.getDatasetOverview(parsedDatasetId);
+        if (ignore) return;
         setOverview(data);
       } catch (err) {
+        if (ignore) return;
         setError(err instanceof Error ? err.message : "Failed to load dataset overview");
       } finally {
-        setIsLoading(false);
+        if (!ignore) setIsLoading(false);
       }
     };
 
     fetchOverview();
+
+    return () => {
+      ignore = true;
+    };
   }, [parsedDatasetId]);
 
   // Fetch vocabularies for auto-mapping
@@ -116,11 +133,11 @@ const DatasetOverview = () => {
           });
           toast.success(`Auto-mapping complete! Mapped: ${response.mapped_count}, Failed: ${response.failed_count}`);
           const data = await api.getDatasetOverview(parsedDatasetId);
-          setOverview(data);
+          if (mountedRef.current) setOverview(data);
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Failed to start mapping");
         } finally {
-          setIsMappingAll(false);
+          if (mountedRef.current) setIsMappingAll(false);
         }
       },
     });
@@ -140,7 +157,7 @@ const DatasetOverview = () => {
           await extraction.startExtraction(overview.dataset.labels);
           toast.success("Terms extracted successfully for all records");
           const data = await api.getDatasetOverview(parsedDatasetId);
-          setOverview(data);
+          if (mountedRef.current) setOverview(data);
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Failed to extract terms");
         }
@@ -173,7 +190,7 @@ const DatasetOverview = () => {
           await Promise.all(labels.map((label) => api.rebuildClusters(parsedDatasetId, label)));
           toast.success("Auto-clustering completed successfully");
           const data = await api.getDatasetOverview(parsedDatasetId);
-          setOverview(data);
+          if (mountedRef.current) setOverview(data);
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Failed to auto-cluster");
         }

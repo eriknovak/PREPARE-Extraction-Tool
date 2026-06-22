@@ -60,6 +60,10 @@ export default function DatasetConceptMapping() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const hasLoadedOnce = useRef(false);
+  // Monotonic id to discard out-of-order/stale search responses, plus a mounted
+  // flag so late responses never setState after unmount.
+  const searchRequestId = useRef(0);
+  const isMountedRef = useRef(true);
   const [isSearching, setIsSearching] = useState(false);
   const [isMapping, setIsMapping] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +78,14 @@ export default function DatasetConceptMapping() {
   }>({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
   usePageTitle(datasetName ? `Concept Mapping - ${datasetName}` : "Concept Mapping");
+
+  // Track mount status so async searches can't setState after unmount.
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Fetch dataset info
   useEffect(() => {
@@ -151,10 +163,12 @@ export default function DatasetConceptMapping() {
     }
   }, [datasetId, selectedLabel, labelsLoaded]);
 
-  // Sync comment field when selecting a different mapping
+  // Sync comment field when the selected mapping changes. Depend on the comment
+  // too: after mapping/approving, selectedMapping is replaced with the same
+  // cluster_id but an updated comment, which would otherwise leave a stale input.
   useEffect(() => {
     setComment(selectedMapping?.comment ?? "");
-  }, [selectedMapping?.cluster_id]);
+  }, [selectedMapping?.cluster_id, selectedMapping?.comment]);
 
   // Reset view when label changes
   useEffect(() => {
@@ -178,6 +192,10 @@ export default function DatasetConceptMapping() {
     const vocabIdsToUse = vocabularyFilterEnabled ? selectedVocabularies : vocabularies.map((v) => v.id);
     if (vocabIdsToUse.length === 0) return;
 
+    // Only the latest in-flight search may apply its result.
+    const requestId = ++searchRequestId.current;
+    const isStale = () => !isMountedRef.current || requestId !== searchRequestId.current;
+
     try {
       setIsSearching(true);
       const request: AutoMapRequest = {
@@ -190,11 +208,13 @@ export default function DatasetConceptMapping() {
       };
 
       const results = await api.autoMapCluster(parseInt(datasetId), selectedMapping.cluster_id, request);
+      if (isStale()) return;
       setSearchResults(results.results);
     } catch (err) {
+      if (isStale()) return;
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
-      setIsSearching(false);
+      if (!isStale()) setIsSearching(false);
     }
   }, [
     selectedMapping,
@@ -222,6 +242,10 @@ export default function DatasetConceptMapping() {
       const limit = 10;
       const offset = (page - 1) * limit;
 
+      // Only the latest in-flight search may apply its result.
+      const requestId = ++searchRequestId.current;
+      const isStale = () => !isMountedRef.current || requestId !== searchRequestId.current;
+
       try {
         setIsSearching(true);
         const results = await api.searchConcepts({
@@ -237,13 +261,15 @@ export default function DatasetConceptMapping() {
           sort_order: sortOrder,
         });
 
+        if (isStale()) return;
         setSearchResults(results.results);
         setSearchPagination(results.pagination || null);
         setSearchPage(page);
       } catch (err) {
+        if (isStale()) return;
         setError(err instanceof Error ? err.message : "Search failed");
       } finally {
-        setIsSearching(false);
+        if (!isStale()) setIsSearching(false);
       }
     },
     [
@@ -261,21 +287,24 @@ export default function DatasetConceptMapping() {
     ]
   );
 
-  // Auto-search when cluster is selected
-  useEffect(() => {
-    if (selectedMapping) {
-      handleAutoSearch();
-    }
-  }, [selectedMapping?.cluster_id, handleAutoSearch]);
-
-  // Re-search when any filter or query mode changes
+  // Single search-trigger effect: runs on cluster selection and whenever a
+  // filter / query mode changes. Previously a second effect also fired
+  // handleAutoSearch on selection, double-firing the request; consolidated here.
   useEffect(() => {
     if (!selectedMapping) return;
     if (useSourceTerm) {
       handleAutoSearch();
-    } else if (searchQuery) {
-      handleManualSearch(1);
+      return;
     }
+    if (!searchQuery) return;
+
+    // Debounce the custom-query search so typing doesn't fire a request per
+    // keystroke. Request-sequencing inside handleManualSearch still discards
+    // any out-of-order/stale responses.
+    const timer = setTimeout(() => {
+      handleManualSearch(1);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [selectedMapping, useSourceTerm, handleAutoSearch, handleManualSearch, searchQuery]);
 
   // Handle search (triggered by Enter key or search button)

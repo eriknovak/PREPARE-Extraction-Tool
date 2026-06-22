@@ -16,6 +16,8 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { useToast } from "@/hooks/useToast";
 import { getLabelColorClass } from "@/utils/labelColors";
 import { downloadDataset as downloadDatasetAPI } from "@/api";
+import { getActiveModel } from "@api/monitoring";
+import ActiveModelChip from "./ActiveModelChip";
 import HighlightedText from "./HighlightedText";
 import RecordItem from "./RecordItem";
 import AnnotationSidebar from "./AnnotationSidebar";
@@ -49,6 +51,9 @@ const DatasetTermExtraction: React.FC = () => {
   }>({ isOpen: false, title: "", message: "", onConfirm: () => {} });
 
   const parsedDatasetId = datasetId ? parseInt(datasetId, 10) : 0;
+
+  // Read-only display of the GLOBAL active extraction model (selected in Monitor).
+  const [activeModelName, setActiveModelName] = useState<string>("Default model");
 
   const {
     dataset,
@@ -139,12 +144,31 @@ const DatasetTermExtraction: React.FC = () => {
     return () => observer.disconnect();
   }, [hasMore, isLoadingMore, loadMoreRecords]);
 
-  // Auto-select first record
+  // Auto-select first record, and re-select when the current selection is no
+  // longer present in the records list (e.g. after a filter change replaces it).
   useEffect(() => {
-    if (records.length > 0 && !selectedRecord) {
+    if (records.length === 0) return;
+    const selectionStillValid = selectedRecord && records.some((r) => r.id === selectedRecord.id);
+    if (!selectionStillValid) {
       selectRecord(records[0]);
     }
   }, [records, selectedRecord, selectRecord]);
+
+  // Fetch the global active extraction model name once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    getActiveModel()
+      .then((res) => {
+        if (cancelled) return;
+        setActiveModelName(res.active_model?.name ?? "Default model");
+      })
+      .catch(() => {
+        /* optional; ignore */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleMarkReviewed = useCallback(async () => {
     if (!selectedRecord) return;
@@ -403,10 +427,17 @@ const DatasetTermExtraction: React.FC = () => {
 
         {/* Statistics and Actions */}
         <div className={styles["stats-section"]}>
-          <div className={styles["stats-section__grid"]}>
-            <StatCard label="Records" value={stats?.total_records ?? 0} />
-            <StatCard label="Identified Terms" value={stats?.extracted_terms_count ?? 0} color="blue" />
-            <StatCard label="Reviewed Records" value={reviewedPercentage} color="green" />
+          <div className={styles["stats-section__top"]}>
+            <div className={styles["stats-section__grid"]}>
+              <StatCard label="Records" value={stats?.total_records ?? 0} />
+              <StatCard label="Identified Terms" value={stats?.extracted_terms_count ?? 0} color="blue" />
+              <StatCard label="Reviewed Records" value={reviewedPercentage} color="green" />
+            </div>
+            {!isExtractingDataset && (
+              <div className={styles["stats-section__model"]}>
+                <ActiveModelChip modelName={activeModelName} />
+              </div>
+            )}
           </div>
           <div className={styles["stats-section__actions"]}>
             {isExtractingDataset ? (

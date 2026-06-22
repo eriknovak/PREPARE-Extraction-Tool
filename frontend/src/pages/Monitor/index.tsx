@@ -1,18 +1,40 @@
 import Layout from "@components/Layout";
+import { ToastContainer } from "@components/Toast/ToastContainer";
 import { usePageTitle } from "@hooks/usePageTitle";
+
+import { useMonitor } from "./hooks/useMonitor";
+import MonitorProvider from "./components/MonitorProvider";
+import MonitorHeader from "./components/MonitorHeader";
+import ViewTabs from "./components/ViewTabs";
+import ModelsView from "./views/ModelsView";
+import TrainingView from "./views/TrainingView";
 import styles from "./styles.module.css";
 
+/** Page body — consumes the shared Monitor state and renders the active view. */
+const MonitorContent = () => {
+  const { activeView, toast } = useMonitor();
+
+  return (
+    <div className={styles.page}>
+      <MonitorHeader />
+
+      <ViewTabs />
+
+      {activeView === "models" ? <ModelsView /> : <TrainingView />}
+
+      <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} duration={5000} />
+    </div>
+  );
+};
+
 const Monitor = () => {
-  usePageTitle("Monitor");
+  usePageTitle("Monitoring");
+
   return (
     <Layout>
-      <div className={styles.monitor}>
-        <h1 className={styles.monitor__title}>Monitor</h1>
-        <div className={styles.monitor__placeholder}>
-          <p>This page is under construction.</p>
-          <p>Monitoring features will be available soon.</p>
-        </div>
-      </div>
+      <MonitorProvider>
+        <MonitorContent />
+      </MonitorProvider>
     </Layout>
   );
 };

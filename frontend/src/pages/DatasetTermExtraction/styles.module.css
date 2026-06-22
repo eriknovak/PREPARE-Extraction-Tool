@@ -68,21 +68,42 @@
 /* Stats Section */
 .stats-section {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 24px;
+  flex-direction: column;
+  gap: 16px;
   margin-bottom: 24px;
+}
+
+/* Top row: stat cards on the left, extraction-model selector on the right. */
+.stats-section__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .stats-section__grid {
   display: flex;
   gap: 12px;
-  flex: 1;
 }
 
 .stats-section__actions {
   display: flex;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+/* Extraction-model selector — inline label + dropdown, aligned to the right
+   of the top row alongside the stat cards. */
+.stats-section__model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stats-section__model-label {
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
 }
 
 /* Extraction Progress (inline with stats) */

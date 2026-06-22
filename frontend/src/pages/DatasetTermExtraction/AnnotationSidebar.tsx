@@ -53,7 +53,6 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
   onSelectAnnotation,
   onCreateAnnotation,
   onDeleteAnnotation,
-  onUpdateAnnotationLabel: _onUpdateAnnotationLabel,
   onUpdateAnnotationDate,
   onCreateLink,
   onDeleteLink,
@@ -232,6 +231,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
     },
     [
       labels,
+      labelRelations.length,
       handleLabelSelection,
       selectedAnnotation,
       onDeleteAnnotation,
@@ -359,7 +359,10 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
             <div className={styles["record-navigation__buttons"]}>
               <Button
                 variant="outline"
-                onClick={() => { exitLinkMode(); onPreviousRecord?.(); }}
+                onClick={() => {
+                  exitLinkMode();
+                  onPreviousRecord?.();
+                }}
                 disabled={!onPreviousRecord || !hasPreviousRecord}
                 title="Previous record"
               >
@@ -368,7 +371,10 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
               </Button>
               <Button
                 variant="outline"
-                onClick={() => { exitLinkMode(); onNextRecord?.(); }}
+                onClick={() => {
+                  exitLinkMode();
+                  onNextRecord?.();
+                }}
                 disabled={!onNextRecord || !hasNextRecord}
                 title="Next record"
               >
@@ -378,7 +384,10 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
             </div>
             <Button
               variant={isReviewed ? "success" : "primary"}
-              onClick={() => { exitLinkMode(); onMarkReviewed?.(); }}
+              onClick={() => {
+                exitLinkMode();
+                onMarkReviewed?.();
+              }}
               disabled={!onMarkReviewed}
               title={isReviewed ? "Marked as reviewed" : "Mark as reviewed"}
             >
@@ -414,7 +423,8 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                   <strong>Creating annotations:</strong> Select a label, then highlight text in the record.
                 </p>
                 <p>
-                  <strong>Changing labels:</strong> Click an annotation, then click a label or press <kbd>1</kbd>–<kbd>9</kbd>.
+                  <strong>Changing labels:</strong> Click an annotation, then click a label or press <kbd>1</kbd>–
+                  <kbd>9</kbd>.
                 </p>
                 <p>
                   <strong>Deleting:</strong> Click an annotation, then press <kbd>Delete</kbd> or <kbd>Backspace</kbd>.
@@ -422,9 +432,9 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                 {labelRelations.length > 0 && (
                   <p>
                     <strong>Linking:</strong> Click <em>Link</em> to enter link mode, then click a highlighted term in
-                    the text (grey border = linkable, black border = already linked). Click a compatible term to link, or click a
-                    black-bordered term to remove that link. With a term selected, press <kbd>Delete</kbd> to remove all its
-                    links at once. Press <kbd>Esc</kbd> to cancel.
+                    the text (grey border = linkable, black border = already linked). Click a compatible term to link,
+                    or click a black-bordered term to remove that link. With a term selected, press <kbd>Delete</kbd> to
+                    remove all its links at once. Press <kbd>Esc</kbd> to cancel.
                   </p>
                 )}
                 <p>
@@ -557,9 +567,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                               const otherLabel = isFrom ? link.to_term_label : link.from_term_label;
                               return (
                                 <div key={link.id} className={styles["annotation-link-row"]}>
-                                  <span className={styles["annotation-link-row__direction"]}>
-                                    {isFrom ? "→" : "←"}
-                                  </span>
+                                  <span className={styles["annotation-link-row__direction"]}>{isFrom ? "→" : "←"}</span>
                                   <span className={styles["annotation-link-row__value"]} title={otherValue}>
                                     {otherValue}
                                   </span>
@@ -603,7 +611,13 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                           title="Delete annotation"
                           disabled={readOnly}
                         >
-                          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
                             <path
                               d="M2 4H14M5.333 4V2.667C5.333 2.298 5.632 2 6 2H10C10.368 2 10.667 2.298 10.667 2.667V4M12.667 4V13.333C12.667 13.702 12.368 14 12 14H4C3.632 14 3.333 13.702 3.333 13.333V4H12.667Z"
                               stroke="currentColor"

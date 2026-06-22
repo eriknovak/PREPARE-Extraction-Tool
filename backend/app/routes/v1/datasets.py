@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import json as _json
-import math
+import logging
 import os
 import re
 from typing import List, Optional, Union
@@ -81,12 +81,16 @@ from app.utils.value_typing import (
     normalize_date_to_key,
     normalize_measure_to_key,
 )
+from app.utils.vector_math import cosine_similarity as _cosine_similarity
+from app.utils.vector_math import mean_vector as _compute_centroid
 
 # ================================================
 # Route definitions
 # ================================================
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # ================================================
 # Helper functions
@@ -201,7 +205,12 @@ async def create_dataset(
     suffix = os.path.splitext(file.filename)[1].lower()
     file_path = await save_upload_to_disk(file, suffix)
 
-    label_list = [label.strip() for label in labels.split(",")]
+    label_list = [label.strip() for label in labels.split(",") if label.strip()]
+    if not label_list:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one non-empty label is required.",
+        )
     parsed_relations: list = []
     if label_relations:
         try:
@@ -557,31 +566,60 @@ def delete_dataset(
         )
     
     verify_dataset_ownership(dataset, current_user.id)
+    # remember the status so the background task can restore it if the
+    # hard-delete fails, keeping the dataset recoverable.
+    previous_status = dataset.status
     dataset.status = ProcessingStatus.DELETED
     db.commit()
 
     # start background deletion
-    background_tasks.add_task(delete_dataset_background, dataset_id)
+    background_tasks.add_task(delete_dataset_background, dataset_id, previous_status)
 
     return MessageOutput(message="Dataset deletion started in the background")
 
 
-def delete_dataset_background(dataset_id: int):
+def delete_dataset_background(
+    dataset_id: int, previous_status: ProcessingStatus = ProcessingStatus.DONE
+):
     with Session(engine) as db:
         try:
             dataset = db.get(Dataset, dataset_id)
             if dataset is None:
-                print("Cannot find dataset to delete")
+                logger.warning("Cannot find dataset %s to delete", dataset_id)
                 return
 
             db.delete(dataset)
             db.commit()
 
-            print(f"Successfully deleted dataset {dataset_id}")
+            logger.info("Successfully deleted dataset %s", dataset_id)
 
         except Exception as e:
             db.rollback()
-            print(f"Failed to delete dataset {dataset_id}: {e}")
+            logger.error(
+                "Failed to hard-delete dataset %s: %s", dataset_id, e, exc_info=True
+            )
+            # The dataset was flagged DELETED before scheduling this task. Since
+            # the hard-delete failed, restore the previous status (and surface
+            # the error) so it is not silently stuck and the user can retry.
+            try:
+                dataset = db.get(Dataset, dataset_id)
+                if dataset is not None:
+                    dataset.status = previous_status
+                    dataset.error_message = f"Deletion failed: {e}"
+                    db.commit()
+                    logger.info(
+                        "Restored dataset %s to status %s after failed deletion",
+                        dataset_id,
+                        previous_status,
+                    )
+            except Exception as restore_error:
+                db.rollback()
+                logger.error(
+                    "Failed to restore dataset %s after failed deletion: %s",
+                    dataset_id,
+                    restore_error,
+                    exc_info=True,
+                )
 
 
 @router.get(
@@ -620,9 +658,23 @@ def download_dataset(
 
     file_extension = "json" if format in {"json", "gliner"} else "csv"
 
-    filename_parts = [dataset.name]
-    if format == "gliner":
-        filename_parts.append("extracted_terms")
+    # Sanitize the dataset name before placing it in the Content-Disposition
+    # header: strip quotes/control chars (header-injection guard) and replace
+    # whitespace with underscores (same approach as omop_export.py).
+    safe_name = re.sub(r'["\r\n\t]', "", dataset.name)
+    safe_name = re.sub(r"\s+", "_", safe_name.strip())
+    if not safe_name:
+        safe_name = f"dataset_{dataset.id}"
+
+    suffix_by_format = {
+        "json": "records",
+        "csv": "records",
+        "gliner": "extracted_terms",
+    }
+    filename_parts = [safe_name]
+    suffix = suffix_by_format.get(format)
+    if suffix:
+        filename_parts.append(suffix)
     filename = "_".join(filename_parts)
 
     return StreamingResponse(
@@ -1397,21 +1449,6 @@ def _merge_labels_by_spelling(
     return merged
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
-    """Compute cosine similarity for two vectors"""
-    dot = 0.0
-    na = 0.0
-    nb = 0.0
-    for x, y in zip(a, b):
-        dot += x * y
-        na += x * x
-        nb += y * y
-    denom = math.sqrt(na) * math.sqrt(nb)
-    if denom == 0.0:
-        return 0.0
-    return dot / denom
-
-
 def _to_list_matrix(embeddings) -> List[List[float]]:
     """
     Convert embeddings to list of listd regardless of whether they come as:
@@ -1423,19 +1460,6 @@ def _to_list_matrix(embeddings) -> List[List[float]]:
     if hasattr(embeddings, "tolist"):
         return embeddings.tolist()
     return embeddings
-
-
-def _compute_centroid(vecs: List[List[float]]) -> List[float]:
-    """Compute mean vector (centroid) for a list of vectors."""
-    if not vecs:
-        return []
-    dim = len(vecs[0])
-    acc = [0.0] * dim
-    for v in vecs:
-        for i in range(dim):
-            acc[i] += float(v[i])
-    n = float(len(vecs))
-    return [x / n for x in acc]
 
 
 def _merge_labels_by_centroid_similarity(

@@ -1,3 +1,4 @@
+import os
 from typing import List
 from gliner import GLiNER
 
@@ -17,9 +18,12 @@ class GlinerEngine(BaseEngine):
         self._initialize()
 
     def _initialize(self):
-        self.model = GLiNER.from_pretrained(self.model, 
-                                            load_tokenizer=False, 
-                                            local_files_only=False)
+        # Resolve from the local directory when the model path exists on disk;
+        # otherwise treat it as a HF-hub id and allow network resolution.
+        local_only = os.path.isdir(self.model)
+        self.model = GLiNER.from_pretrained(self.model,
+                                            load_tokenizer=False,
+                                            local_files_only=local_only)
         self.model.to(self.device)
 
     def extract_entities(self, medical_text: str, labels: list[str]) -> List[Entity]:

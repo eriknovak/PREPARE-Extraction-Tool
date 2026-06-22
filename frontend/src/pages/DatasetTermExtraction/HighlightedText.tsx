@@ -71,7 +71,7 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({ text, terms, labels, 
   }, [hoveredTermId, terms]);
 
   return (
-    <div className={styles['record-text']} ref={containerRef}>
+    <div className={styles["record-text"]} ref={containerRef}>
       {segments.map((segment, idx) =>
         segment.type === "text" ? (
           <span key={idx}>{segment.content}</span>
@@ -79,16 +79,14 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({ text, terms, labels, 
           <span
             key={idx}
             data-term-id={segment.term.id}
-            className={classNames(styles['highlighted-term'], styles[getLabelColorClass(segment.term.label, labels)], {
-              [styles['highlighted-term--focused']]: focusedTermId === segment.term.id,
-              [styles['highlighted-term--arc-hover']]: hoveredConnectedIds.has(segment.term.id),
+            className={classNames(styles["highlighted-term"], styles[getLabelColorClass(segment.term.label, labels)], {
+              [styles["highlighted-term--focused"]]: focusedTermId === segment.term.id,
+              [styles["highlighted-term--arc-hover"]]: hoveredConnectedIds.has(segment.term.id),
             })}
             title={
               segment.term.links && segment.term.links.length > 0
                 ? `${segment.term.label}: ${segment.term.value}\nLinked to: ${segment.term.links
-                    .map((l) =>
-                      l.from_term_id === segment.term.id ? l.to_term_value : l.from_term_value
-                    )
+                    .map((l) => (l.from_term_id === segment.term.id ? l.to_term_value : l.from_term_value))
                     .join(", ")}`
                 : `${segment.term.label}: ${segment.term.value}`
             }
@@ -97,7 +95,7 @@ const HighlightedText: React.FC<HighlightedTextProps> = ({ text, terms, labels, 
           >
             {segment.content}
             {segment.term.links && segment.term.links.length > 0 && (
-              <span className={styles['highlighted-term__link-badge']} aria-hidden="true">
+              <span className={styles["highlighted-term__link-badge"]} aria-hidden="true">
                 🔗
               </span>
             )}

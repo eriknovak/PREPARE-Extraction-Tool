@@ -456,3 +456,158 @@ export interface ConceptSearchParams {
 export interface DistinctValuesOutput {
   values: string[];
 }
+
+// ================================================
+// Monitoring / training types
+// ================================================
+
+/** Minimal dataset shape used by the monitoring dashboard. */
+export interface MonitorDataset {
+  id: number;
+  name: string;
+}
+
+/** A training run with the metadata needed to compare/manage runs. */
+export interface MonitorRun {
+  run_id: number;
+  status?: string;
+  name?: string | null;
+  base_model?: string | null;
+  labels?: string[];
+  val_ratio?: number | null;
+  created_at?: string | null;
+  error_message?: string | null;
+  /** Path to the trained model artifact, if any. */
+  path?: string | null;
+  /** Id of the linked trained model, used to select it for extraction (if any). */
+  model_id?: number | null;
+  /** Overall macro-F1 across labels, if evaluation is available. */
+  score?: number | null;
+  /** Whether this run is the dataset's designated preferred/best run. */
+  preferred?: boolean;
+}
+
+/** A trained NER model available for selection in extraction. */
+export interface ModelSummary {
+  id: number;
+  name: string;
+  version: string;
+  base_model?: string | null;
+  path?: string | null;
+  dataset_id?: number | null;
+  created_at?: string | null;
+  /** Overall macro-F1 across labels, if the model has been evaluated. */
+  score?: number | null;
+  run_id?: number | null;
+  is_active?: boolean;
+}
+
+/** List of trained models available for selection. */
+export interface ModelsOutput {
+  models: ModelSummary[];
+}
+
+/** The global active extraction model (null active_model = bioner default). */
+export interface ActiveModelResponse {
+  active_model?: ModelSummary | null;
+}
+
+/** Paginated list of training runs for a dataset. */
+export interface RunsOutput {
+  runs: MonitorRun[];
+  pagination: PaginationMetadata;
+}
+
+/** Partial update for a training run (rename / designate as preferred). */
+export interface RunUpdate {
+  name?: string | null;
+  preferred?: boolean;
+}
+
+/** Per-label evaluation metrics returned by the bioner backend. */
+export interface PerLabelMetrics {
+  exact_f1?: number;
+  relaxed_f1?: number;
+  f1?: number;
+  precision: number;
+  recall: number;
+}
+
+/** Evaluation response for a single run. */
+export interface EvaluationResponse {
+  run_id: number;
+  /** Display name for the entry; the default-model baseline uses "Base model".
+   * Falls back to `Run #<run_id>` when absent. */
+  name?: string;
+  /** True for the default-model baseline entry (run_id 0, not a real run). */
+  is_baseline?: boolean;
+  per_label: { [label: string]: PerLabelMetrics };
+}
+
+/** A gold or predicted span inside an example error's context text. */
+export interface ErrorSpan {
+  text: string;
+  start: number;
+  end: number;
+  label: string;
+}
+
+/** One concrete per-label error. A missed gold span has `gold` set and
+ * `predicted` null; a wrong prediction has `predicted` set and `gold` null. */
+export interface ErrorExample {
+  text: string;
+  gold: ErrorSpan | null;
+  predicted: ErrorSpan | null;
+}
+
+/** Per-label confusion summary plus a bounded sample of example errors. */
+export interface LabelErrorAnalysis {
+  precision?: number | null;
+  recall?: number | null;
+  fp?: number | null;
+  fn?: number | null;
+  examples: ErrorExample[];
+}
+
+/** Per-label error analysis for a run. `available` is false for older runs
+ * trained before error analysis was recorded. */
+export interface RunErrorAnalysis {
+  run_id: number;
+  available: boolean;
+  per_label: { [label: string]: LabelErrorAnalysis };
+}
+
+/** A single training metric point streamed over the websocket.
+ *  `loss` is null on eval-only rows (which carry `eval_loss` instead). */
+export interface TrainingMetric {
+  epoch: number;
+  loss: number | null;
+  step?: number | null;
+  eval_loss?: number | null;
+}
+
+/** Per-model detail: training datasets, snapshot stats, base-vs-trained eval. */
+export interface ModelDetailResponse {
+  model_id: number;
+  run_id?: number | null;
+  base_model?: string | null;
+  train_dataset_ids: number[];
+  eval_dataset_ids: number[];
+  train_stats?: {
+    record_count?: number;
+    term_count?: number;
+    label_distribution?: { [label: string]: number };
+    total_steps?: number;
+    val_ratio?: number;
+  } | null;
+  labels: string[];
+  per_label_trained: { [label: string]: { [metric: string]: number } };
+  per_label_baseline: { [label: string]: { [metric: string]: number } };
+}
+
+/** Dataset statistics used by the monitoring dashboard. */
+export interface MonitorDatasetStats {
+  totalRecords: number;
+  totalTerms: number;
+  labelDistribution: { [label: string]: number };
+}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Layout from "@components/Layout";
 import FileDropzone from "@components/FileDropzone";
@@ -12,6 +12,14 @@ import { faArrowLeft } from "@fortawesome/free-solid-svg-icons";
 import type { LabelRelation } from "@/types";
 
 import styles from "./styles.module.css";
+
+// ================================================
+// Types
+// ================================================
+
+// Client-side relation with a stable id used for React keys. The id is
+// stripped before sending to the API (which expects bare LabelRelation).
+type KeyedRelation = LabelRelation & { id: number };
 
 // ================================================
 // Component
@@ -28,7 +36,10 @@ const DatasetUpload = () => {
   const [error, setError] = useState<string | null>(null);
   const [dateLabel, setDateLabel] = useState("");
   const [hasRelations, setHasRelations] = useState(false);
-  const [labelRelations, setLabelRelations] = useState<LabelRelation[]>([]);
+  const [labelRelations, setLabelRelations] = useState<KeyedRelation[]>([]);
+
+  const relationIdRef = useRef(0);
+  const nextRelationId = useCallback(() => relationIdRef.current++, []);
 
   const { uploadDataset } = useDatasets();
   const navigate = useNavigate();
@@ -41,22 +52,20 @@ const DatasetUpload = () => {
 
   // Drop relations whose labels no longer exist when labels change
   useEffect(() => {
-    setLabelRelations((prev) =>
-      prev.filter((r) => labels.includes(r.from_label) && labels.includes(r.to_label))
-    );
+    setLabelRelations((prev) => prev.filter((r) => labels.includes(r.from_label) && labels.includes(r.to_label)));
   }, [labels]);
 
   const addRelation = useCallback(() => {
     if (labels.length < 2) return;
-    setLabelRelations((prev) => [...prev, { from_label: labels[0], to_label: labels[1] }]);
-  }, [labels]);
+    setLabelRelations((prev) => [...prev, { id: nextRelationId(), from_label: labels[0], to_label: labels[1] }]);
+  }, [labels, nextRelationId]);
 
-  const updateRelation = useCallback((index: number, field: "from_label" | "to_label", value: string) => {
-    setLabelRelations((prev) => prev.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
+  const updateRelation = useCallback((id: number, field: "from_label" | "to_label", value: string) => {
+    setLabelRelations((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)));
   }, []);
 
-  const removeRelation = useCallback((index: number) => {
-    setLabelRelations((prev) => prev.filter((_, i) => i !== index));
+  const removeRelation = useCallback((id: number) => {
+    setLabelRelations((prev) => prev.filter((r) => r.id !== id));
   }, []);
 
   const handleFileSelect = useCallback(
@@ -100,12 +109,17 @@ const DatasetUpload = () => {
         {
           name: datasetName.trim(),
           labels: labels.join(","),
-          label_relations: hasRelations && labelRelations.length > 0 ? JSON.stringify(labelRelations) : undefined,
+          label_relations:
+            hasRelations && labelRelations.length > 0
+              ? JSON.stringify(
+                  // Strip the client-only id; the API expects bare LabelRelation
+                  labelRelations.map(({ from_label, to_label }) => ({ from_label, to_label }))
+                )
+              : undefined,
           file: file,
           date_label: dateLabel || undefined,
         },
         (progress) => {
-          console.log("Upload progress:", progress.toFixed(2) + "%");
           setUploadProgress(progress);
         }
       );
@@ -182,12 +196,12 @@ const DatasetUpload = () => {
               {hasRelations && (
                 <div className={styles["upload__relations"]}>
                   <p className={styles["upload__relations-title"]}>Label relationships</p>
-                  {labelRelations.map((rel, idx) => (
-                    <div key={idx} className={styles["upload__relation-row"]}>
+                  {labelRelations.map((rel) => (
+                    <div key={rel.id} className={styles["upload__relation-row"]}>
                       <select
                         className={styles["upload__relation-select"]}
                         value={rel.from_label}
-                        onChange={(e) => updateRelation(idx, "from_label", e.target.value)}
+                        onChange={(e) => updateRelation(rel.id, "from_label", e.target.value)}
                         disabled={isUploading}
                       >
                         {labels.map((l) => (
@@ -200,7 +214,7 @@ const DatasetUpload = () => {
                       <select
                         className={styles["upload__relation-select"]}
                         value={rel.to_label}
-                        onChange={(e) => updateRelation(idx, "to_label", e.target.value)}
+                        onChange={(e) => updateRelation(rel.id, "to_label", e.target.value)}
                         disabled={isUploading}
                       >
                         {labels
@@ -214,7 +228,7 @@ const DatasetUpload = () => {
                       <button
                         type="button"
                         className={styles["upload__relation-remove"]}
-                        onClick={() => removeRelation(idx)}
+                        onClick={() => removeRelation(rel.id)}
                         disabled={isUploading}
                         title="Remove relationship"
                       >
@@ -326,8 +340,8 @@ const DatasetUpload = () => {
                 time.
               </p>
               <p>
-                <strong>Label relationships:</strong> (optional) Check this if some labels are semantically related.
-                For each pair you define, annotators will be able to link individual annotations of those labels to each
+                <strong>Label relationships:</strong> (optional) Check this if some labels are semantically related. For
+                each pair you define, annotators will be able to link individual annotations of those labels to each
                 other using the &ldquo;Link&rdquo; button in the annotation panel.
               </p>
               <p>Maximum file size: 2GB. Supported formats: .csv, .json</p>

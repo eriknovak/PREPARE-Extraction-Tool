@@ -2,3 +2,11 @@
 .env
 .env.prod
 .claude
+# HuggingFace cache (persistent, shared by bioner + backend)
+.cache/
+
+# Local & trained model artifacts (folder created at runtime by the bioner volume)
+bioner/models/
+
+# devflow worktrees
+.devflow

@@ -13,6 +13,30 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
+:root {
+    --color-primary: #144d70;
+    --color-primary-dark: #11415e;
+    --color-success: #269b6f;
+    --color-error: #dc2626;
+    --color-info: #3b82f6;
+    --color-warning: #f59e0b;
+    --color-text: #374151;
+    --color-text-muted: #6b7280;
+    --color-border: #e5e7eb;
+    --color-surface: #ffffff;
+    --color-surface-alt: #f9fafb;
+    --space-1: 8px;
+    --space-2: 12px;
+    --space-3: 16px;
+    --space-4: 24px;
+    --space-5: 32px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
 * {
     box-sizing: border-box;
 }

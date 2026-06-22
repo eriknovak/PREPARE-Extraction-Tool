@@ -1,3 +1,8 @@
+# Pin the project name so the named volumes (e.g. app-db-data) keep a stable,
+# directory-independent name. Without this, launching from a renamed/cloned/
+# differently-cased path creates fresh empty volumes -> the DB appears wiped.
+name: prepare-extraction-tool
+
 services:
 
   postgres:
@@ -77,10 +82,9 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    volumes:
-      - ./backend/model:/root/.cache/huggingface
     environment:
-      - EXTRACT_HOST=${EXTRACT_HOST:-http://bioner:${BIONER_PORT:-5600}}
+      # Bioner reachable by compose service name inside the network (overrides .env localhost)
+      - EXTRACT_HOST=http://bioner:${BIONER_PORT:-5600}
       - ENVIRONMENT=${ENVIRONMENT}
       - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
       - SECRET_KEY=${SECRET_KEY?Variable not set}
@@ -91,6 +95,10 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD?Variable not set}
       - DATABASE_URL=postgresql://${POSTGRES_USER?Variable not set}:${POSTGRES_PASSWORD?Variable not set}@postgres:5432/${POSTGRES_DB?Variable not set}
       - ELASTICSEARCH_URL=http://elasticsearch:9200
+      # Persistent HuggingFace cache (shared with bioner) for embedding model downloads
+      - HF_HOME=/.cache
+    volumes:
+      - ./.cache:/.cache
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/check"]
       interval: 10s
@@ -138,8 +146,10 @@ services:
     env_file:
       - .env
     volumes:
-      - ./bioner/models:/models:ro
-      - ./bioner/model:/model:ro
+      # Model library: trained models (written here per run) + hand-placed local models
+      - ./bioner/models:/models
+      # Shared, persistent HuggingFace cache (downloaded models persist across restarts)
+      - ./.cache:/.cache
     environment:
       - ENGINE=${BIONER_ENGINE?Variable not set}
       - MODEL=${BIONER_MODEL?Variable not set}
@@ -149,6 +159,12 @@ services:
       - USE_GPU=${BIONER_USE_GPU}
       - ADAPTER_PATH=${BIONER_ADAPTER_PATH}
       - PROMPTS_PATH=${BIONER_PROMPTS_PATH}
+      # Where trained models are saved (inside the /models library volume)
+      - BIONER_MODELS_DIR=/models
+      # Persistent HuggingFace cache location
+      - HF_HOME=/.cache
+      # Backend reachable by compose service name inside the network (overrides .env localhost)
+      - BACKEND_HOST=http://backend:8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]
       interval: 15s

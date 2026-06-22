@@ -119,7 +119,7 @@ export function useExtractionPolling({
         }
       }
     },
-    [datasetId, selectedRecordId, setSelectedRecordTerms, fetchStats, refreshRecords, extractionStorageKey]
+    [datasetId, setSelectedRecordTerms, fetchStats, refreshRecords, extractionStorageKey]
   );
 
   const extractTermsForRecord = useCallback(async () => {
@@ -192,13 +192,13 @@ export function useExtractionPolling({
   });
 
   // Resume polling once on mount if a job was active when the user navigated away.
-  // Using an empty dep array is intentional — we only want this to fire on mount.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     const savedJobId = localStorage.getItem(extractionStorageKey);
     if (savedJobId && pollJobRef.current) {
       pollJobRef.current(savedJobId).catch(() => {});
     }
+    // Mount-only: using an empty dep array is intentional — we only want this to fire on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {

@@ -91,9 +91,12 @@ def get_dataset_mappings(
     approved_count = 0
 
     for cluster in clusters:
-        # Get terms count and occurrences
-        term_count = len(cluster.source_terms)
-        total_occurrences = sum(1 for _ in cluster.source_terms)
+        # Count distinct term values vs. total occurrences, consistent with the
+        # clusters overview in datasets.py: terms are collapsed by `value`, so
+        # term_count is the number of distinct values while total_occurrences is
+        # the raw number of extracted source-term rows.
+        term_count = len({term.value for term in cluster.source_terms})
+        total_occurrences = len(cluster.source_terms)
 
         # Check if cluster has a mapping
         mapping_entry = None
@@ -593,8 +596,29 @@ async def import_mappings(
 
     # Read CSV
     content = await file.read()
-    text = content.decode("utf-8")
+    try:
+        text = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(
+            status_code=400,
+            detail="File is not valid UTF-8 encoded text. Please upload a UTF-8 CSV.",
+        )
+
     reader = csv.DictReader(io.StringIO(text))
+
+    # Validate required headers up front so a CSV missing them fails loudly
+    # instead of silently skipping every row.
+    required_columns = {"source_name", "target_concept_id"}
+    headers = set(reader.fieldnames or [])
+    missing_columns = required_columns - headers
+    if missing_columns:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "CSV is missing required column(s): "
+                + ", ".join(sorted(missing_columns))
+            ),
+        )
 
     matched_count = 0
     created_count = 0
