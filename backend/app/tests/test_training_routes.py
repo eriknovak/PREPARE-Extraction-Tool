@@ -259,6 +259,41 @@ def test_rename_and_prefer_run(client):
     assert body["preferred"] is True
 
 
+def test_rename_run_syncs_linked_model_name(client):
+    """Renaming a run must also rename its linked Model.
+
+    The Models view displays ``Model.name``, but rename only wrote
+    ``TrainingRun.name`` — so the rename appeared to do nothing. Assert the
+    new name is what the /models list (the user-facing surface) reports.
+    """
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_ids=[client.dataset_id],
+        base_model="b",
+        labels=["Drug"],
+        val_ratio=0.0,
+    )
+    # A selectable trained model linked to the run (what the Models view lists).
+    model = training_service._ensure_model(db, run)
+    model.path = "/models/run-x"
+    db.add(model)
+    db.commit()
+    assert model.name == f"run-{run.id}"
+
+    resp = client.patch(
+        f"/api/v1/bioner/runs/{run.id}",
+        json={"name": "Aspirin detector"},
+    )
+    assert resp.status_code == 200
+
+    listed = client.get("/api/v1/bioner/models").json()["models"]
+    names = {m["id"]: m["name"] for m in listed}
+    assert names[model.id] == "Aspirin detector"
+
+
 def _make_trained_model(client, *, path="/models/run-x", dataset_id=None):
     """Persist a Model with an artifact path (a selectable trained model)."""
     from app.models_db import Model
@@ -649,7 +684,13 @@ def test_epoch_update_not_persisted_but_train_log_is(client):
 
     r1 = client.post(
         "/api/v1/bioner/internal/training-events",
-        json={"type": "train_log", "run_id": run.id, "step": 1, "epoch": 0.5, "loss": 1.23},
+        json={
+            "type": "train_log",
+            "run_id": run.id,
+            "step": 1,
+            "epoch": 0.5,
+            "loss": 1.23,
+        },
     )
     assert r1.status_code == 200
 
