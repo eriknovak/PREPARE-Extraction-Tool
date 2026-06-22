@@ -12,16 +12,45 @@ import TrainingLossChart from "../charts/TrainingLossChart";
 import { useMonitor } from "../hooks/useMonitor";
 import styles from "./TrainingView.module.css";
 
+// Curated metadata for the predefined baselines. `params` is the model's
+// parameter count; `vramGB` is an approximate peak GPU VRAM to fine-tune at the
+// default batch size (8). gliner_large ships only a pytorch checkpoint (no
+// safetensors param count) so its count is approximate.
 const GLINER_BASELINES = [
-  { value: "urchade/gliner_multi-v2.1", label: "Multilingual (default)" },
-  { value: "urchade/gliner_large-v2.1", label: "Large (best, slower)" },
-  { value: "E3-JSI/gliner-multi-med-ner-synthetic-v1", label: "Biomedical / clinical (multilingual)" },
+  {
+    value: "urchade/gliner_multi-v2.1",
+    label: "Multilingual (default)",
+    params: "289M",
+    vramGB: 8,
+    description: "Multilingual general-purpose NER. A solid default for most datasets.",
+  },
+  {
+    value: "urchade/gliner_large-v2.1",
+    label: "Large (best, slower)",
+    params: "~440M",
+    vramGB: 12,
+    description: "Highest accuracy, but heavier and slower to train. English-focused.",
+  },
+  {
+    value: "E3-JSI/gliner-multi-med-ner-synthetic-v1",
+    label: "Biomedical / clinical (multilingual)",
+    params: "289M",
+    vramGB: 8,
+    description: "Biomedical / clinical NER across 9 languages, including Slovenian.",
+  },
 ] as const;
 
+// Compact one-line label for the dropdown: "Multilingual (default) · 289M · ~8 GB VRAM".
+const formatBaselineLabel = (b: (typeof GLINER_BASELINES)[number]) =>
+  `${b.label} · ${b.params} · ~${b.vramGB} GB VRAM`;
+
 const BASELINE_SELECT_OPTIONS = [
-  ...GLINER_BASELINES.map((b) => ({ value: b.value, label: b.label })),
+  ...GLINER_BASELINES.map((b) => ({ value: b.value, label: formatBaselineLabel(b) })),
   { value: "custom", label: "Custom…" },
 ];
+
+const VRAM_TOOLTIP =
+  "Approximate peak GPU VRAM to fine-tune at the default batch size (8). Actual usage varies with batch size and sequence length.";
 
 const SPLIT_OPTIONS = [
   { value: "0", label: "No split (100% train)" },
@@ -70,6 +99,8 @@ const TrainingView = () => {
   } = useMonitor();
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const selectedBaseline = GLINER_BASELINES.find((b) => b.value === baseModel);
 
   const datasetOptions = datasets.map((d) => ({ value: String(d.id), label: d.name }));
   // Eval datasets are distinct from training datasets (overlaps are dropped server-side).
@@ -143,7 +174,7 @@ const TrainingView = () => {
             fullWidth={false}
           />
 
-          {useCustomModel && (
+          {useCustomModel ? (
             <>
               <input
                 id="custom-model-input"
@@ -158,6 +189,30 @@ const TrainingView = () => {
                 ⚠ Advanced: custom base models must be GLiNER-compatible. An incompatible model will fail to train.
               </p>
             </>
+          ) : (
+            selectedBaseline && (
+              <div className={styles.modelInfo}>
+                <p className={styles.modelInfo__desc}>{selectedBaseline.description}</p>
+                <dl className={styles.modelInfo__specs}>
+                  <div className={styles.modelInfo__spec}>
+                    <dt className={styles.modelInfo__term}>Model</dt>
+                    <dd className={styles.modelInfo__value}>
+                      <code className={styles.code}>{selectedBaseline.value}</code>
+                    </dd>
+                  </div>
+                  <div className={styles.modelInfo__spec}>
+                    <dt className={styles.modelInfo__term}>Parameters</dt>
+                    <dd className={styles.modelInfo__value}>{selectedBaseline.params}</dd>
+                  </div>
+                  <div className={styles.modelInfo__spec}>
+                    <dt className={styles.modelInfo__term}>Training VRAM</dt>
+                    <dd className={styles.modelInfo__value} title={VRAM_TOOLTIP}>
+                      ~{selectedBaseline.vramGB} GB
+                    </dd>
+                  </div>
+                </dl>
+              </div>
+            )
           )}
         </div>
 
