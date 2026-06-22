@@ -53,7 +53,6 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
   onSelectAnnotation,
   onCreateAnnotation,
   onDeleteAnnotation,
-  onUpdateAnnotationLabel: _onUpdateAnnotationLabel,
   onUpdateAnnotationDate,
   onCreateLink,
   onDeleteLink,
@@ -232,6 +231,7 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
     },
     [
       labels,
+      labelRelations.length,
       handleLabelSelection,
       selectedAnnotation,
       onDeleteAnnotation,
