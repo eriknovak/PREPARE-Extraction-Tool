@@ -462,6 +462,13 @@ def update_run(
     if name is not None:
         stripped = name.strip()
         run.name = stripped or None
+        # Keep the linked Model's name in sync — the Models view displays
+        # Model.name, so a rename that only touched the run looked like a no-op.
+        if stripped and run.model_id is not None:
+            model = db.get(Model, run.model_id)
+            if model is not None:
+                model.name = stripped
+                db.add(model)
     if preferred is not None:
         if preferred:
             others = db.exec(
