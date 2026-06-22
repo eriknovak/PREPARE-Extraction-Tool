@@ -168,16 +168,17 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
         }
 
         case "train_log": {
-          // Only plot points that actually carry a loss — train_log events also
-          // fire for eval / summary logs (no loss), which would otherwise inject
-          // a spurious 0 and drop the curve to the axis.
-          if (data.loss == null) break;
-          const loss = Number(data.loss);
-          if (!Number.isFinite(loss)) break;
+          // Plot points that carry a train loss OR an eval loss. Eval rows arrive
+          // on their own train_log (eval_loss, no train loss) and must be kept so
+          // the eval curve renders; only metric-less logs (learning_rate / grad_norm
+          // only) are skipped, since those would inject a spurious empty point.
+          const loss = data.loss != null && Number.isFinite(Number(data.loss)) ? Number(data.loss) : null;
+          const evalLoss =
+            data.eval_loss != null && Number.isFinite(Number(data.eval_loss)) ? Number(data.eval_loss) : null;
+          if (loss == null && evalLoss == null) break;
 
           const epoch = Number(data.epoch ?? 0);
           const step = data.step != null ? Number(data.step) : null;
-          const evalLoss = data.eval_loss != null ? Number(data.eval_loss) : null;
 
           if (step != null) {
             setCurrentStep(step);

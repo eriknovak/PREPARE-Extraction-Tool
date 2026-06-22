@@ -52,14 +52,10 @@ async def receive_training_event(payload: dict, db: Session = Depends(get_sessio
                 loss=_safe_float(payload.get("loss")),
                 eval_loss=_safe_float(payload.get("eval_loss")),
             )
-    elif event_type == "epoch_update":
-        # Only persist points that carry a loss value; loss-less epoch-boundary
-        # ticks are still broadcast below for the live UI.
-        loss = _safe_float(payload.get("loss"))
-        if loss is not None:
-            epoch_raw = payload.get("epoch")
-            epoch = int(float(epoch_raw)) if epoch_raw is not None else 0
-            training_service.add_epoch_metric(db, run_id, epoch=epoch, loss=loss)
+    # `epoch_update` is intentionally not persisted: `train_log` already records a
+    # row per step (logging_steps=1), so persisting the epoch tick's loss would
+    # duplicate it as a step-less row that pollutes the loss-curve x-axis. The
+    # event is still broadcast below to drive the live epoch-progress UI.
     elif event_type == "baseline_evaluation_completed":
         metrics = payload.get("metrics") or {}
         per_label = metrics.get("per_label") or {}

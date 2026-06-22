@@ -3,21 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck, faPen, faTrash, faXmark } from "@fortawesome/free-solid-svg-icons";
 
-import {
-  deleteRun,
-  getModelDetail,
-  getModels,
-  getRunMetrics,
-  setActiveModel,
-  updateRun,
-} from "@api/monitoring";
+import { deleteRun, getModelDetail, getModels, getRunMetrics, setActiveModel, updateRun } from "@api/monitoring";
 import Button from "@components/Button";
 import Card from "@components/Card";
 import { ConfirmDialog } from "@components/ConfirmDialog";
 import { BarChart, ChartState, LineChart } from "@components/charts";
 import type { ModelDetailResponse, ModelSummary, TrainingMetric } from "types";
 
-import { formatEpoch, formatLoss } from "../chartData";
+import { buildLossSeries, formatEpoch, formatLoss } from "../chartData";
 import { useMonitor } from "../hooks/useMonitor";
 import styles from "./ModelsView.module.css";
 
@@ -56,23 +49,13 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
 
   // ── Loss curve ──
   const hasLoss = metrics.length > 0;
-  const hasStep = metrics.some((m) => m.step != null);
-  const xData = hasStep ? metrics.map((m) => m.step ?? m.epoch) : metrics.map((m) => m.epoch);
+  const { xData, loss: lossValues, evalLoss, hasStep } = buildLossSeries(metrics);
   const xName = hasStep ? "Step" : "Epoch";
-  const lossValues = metrics.map((m) => m.loss);
-  const evalLossValues = metrics.map((m) => m.eval_loss ?? null).filter((v) => v !== null);
-  const hasEvalLoss = evalLossValues.length > 0;
+  const hasEvalLoss = evalLoss.some((v) => v !== null);
 
   const lossSeries = [
     { name: "Train loss", data: lossValues, area: true },
-    ...(hasEvalLoss
-      ? [
-          {
-            name: "Eval loss",
-            data: metrics.map((m) => m.eval_loss ?? null),
-          },
-        ]
-      : []),
+    ...(hasEvalLoss ? [{ name: "Eval loss", data: evalLoss }] : []),
   ];
 
   // ── Per-label eval ──
@@ -147,14 +130,8 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
                       <td>{label}</td>
                       <td>{base != null ? `${(base * 100).toFixed(1)}%` : "—"}</td>
                       <td>{trained != null ? `${(trained * 100).toFixed(1)}%` : "—"}</td>
-                      <td
-                        className={
-                          delta == null ? undefined : delta >= 0 ? styles.deltaPos : styles.deltaNeg
-                        }
-                      >
-                        {delta != null
-                          ? `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)}%`
-                          : "—"}
+                      <td className={delta == null ? undefined : delta >= 0 ? styles.deltaPos : styles.deltaNeg}>
+                        {delta != null ? `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(1)}%` : "—"}
                       </td>
                     </tr>
                   );
@@ -209,9 +186,7 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
             {labels.map((label) => (
               <span key={label} className={styles.tag}>
                 {label}
-                {labelDist[label] != null && (
-                  <span className={styles.tagCount}>{labelDist[label]}</span>
-                )}
+                {labelDist[label] != null && <span className={styles.tagCount}>{labelDist[label]}</span>}
               </span>
             ))}
           </div>
@@ -307,8 +282,7 @@ const ModelsView = () => {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "";
         const isConflict =
-          msg === "Cannot change the model while an extraction job is running" ||
-          msg.startsWith("HTTP 409");
+          msg === "Cannot change the model while an extraction job is running" || msg.startsWith("HTTP 409");
         toast.showToast(
           isConflict ? "Cannot change the model while an extraction job is running" : "Failed to set the active model",
           "error"
@@ -417,9 +391,7 @@ const ModelsView = () => {
                     onClick={() => setSelectedId(m.id)}
                   >
                     <span className={styles.name}>{m.name}</span>
-                    {m.score != null && (
-                      <span className={styles.score}>{(m.score * 100).toFixed(1)}%</span>
-                    )}
+                    {m.score != null && <span className={styles.score}>{(m.score * 100).toFixed(1)}%</span>}
                     {m.is_active && <span className={styles.active}>● active</span>}
                   </button>
 
@@ -470,9 +442,7 @@ const ModelsView = () => {
             <ChartState variant="loading" message="Loading model detail…" height={CHART_HEIGHT} />
           </Card>
         ) : selectedId == null ? (
-          <p className={styles.placeholder}>
-            Select a model to see its training and evaluation detail.
-          </p>
+          <p className={styles.placeholder}>Select a model to see its training and evaluation detail.</p>
         ) : selectedId < 0 ? (
           <ModelDetail detail={null} metrics={[]} />
         ) : (
@@ -484,11 +454,7 @@ const ModelsView = () => {
       <ConfirmDialog
         isOpen={deleteTarget != null}
         title="Delete model"
-        message={
-          deleteTarget
-            ? `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone.`
-            : ""
-        }
+        message={deleteTarget ? `Are you sure you want to delete "${deleteTarget.name}"? This cannot be undone.` : ""}
         confirmText="Delete"
         variant="danger"
         onConfirm={handleDeleteConfirm}

@@ -916,20 +916,20 @@ class GLiNERFinetuner:
                 )
 
             def on_log(self, args, state, control, logs=None, **kwargs):
-                logger.info(f"[ON_LOG FIRED] epoch={state.epoch} logs={logs}")
                 if not logs:
                     return
 
-                event = {
-                    "type": "epoch_update",
-                    "run_id": finetuner.run_id,
-                    "epoch": float(state.epoch or 0),
-                }
-
-                if "loss" in logs:
-                    event["loss"] = float(logs["loss"])
-
-                finetuner._emit(event)
+                # Emit an epoch-progress tick for the live UI only. Loss is NOT
+                # attached here: `_TrackingTrainer.log` already streams it as a
+                # `train_log` (the authoritative per-step metric), so attaching it
+                # would double-count loss points on the curve.
+                finetuner._emit(
+                    {
+                        "type": "epoch_update",
+                        "run_id": finetuner.run_id,
+                        "epoch": float(state.epoch or 0),
+                    }
+                )
 
         class _TrackingTrainer(Trainer):
             def training_step(self, model, inputs, num_items_in_batch=None):
