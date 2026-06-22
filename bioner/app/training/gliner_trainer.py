@@ -189,6 +189,27 @@ class GLiNERDataset(TorchDataset):
         }
 
 
+def _per_element_mean_loss(summed_loss, numel):
+    """Normalize a sum-reduced GLiNER loss to a per-element mean for reporting.
+
+    GLiNER's ``Trainer`` defaults to ``loss_reduction='sum'`` (see
+    ``gliner/training/trainer.py``), so the model returns the loss summed over
+    every score element (``batch * seq_len * span_width * num_classes``). That
+    sum is what gets backpropagated and the tuned ``5e-6`` learning rate depends
+    on it, but it produces logged values in the thousands-to-hundreds-of-thousands
+    range. The model's own ``mean`` reduction is exactly ``sum / numel``, so
+    dividing the summed loss by the score-tensor element count yields the value
+    ``loss_reduction='mean'`` would report — a sane per-step mean — without
+    touching the gradient signal.
+
+    Accepts a tensor or a plain float and returns the same kind. Guards against
+    empty/degenerate batches (``numel == 0``) by returning the input unchanged.
+    """
+    if not numel:
+        return summed_loss
+    return summed_loss / numel
+
+
 # -----------------------------
 # Trainer
 # -----------------------------
@@ -932,19 +953,62 @@ class GLiNERFinetuner:
                 finetuner._emit(event)
 
         class _TrackingTrainer(Trainer):
+            # Number of score elements the most recent (summed) loss was taken
+            # over, captured in compute_loss so the *reported* loss can be
+            # normalized to a per-element mean without changing backprop.
+            _last_loss_numel: int = 0
+
             def training_step(self, model, inputs, num_items_in_batch=None):
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
                     raise KeyboardInterrupt("Training stopped by user")
-                return super().training_step(model, inputs)
+                # super() backpropagates the sum-reduced loss (gradient signal
+                # unchanged) and returns that summed scalar for HF to log. We
+                # only normalize the *returned*/logged value to a per-element
+                # mean so the streamed/persisted curve is in a sane range.
+                loss = super().training_step(model, inputs)
+                return _per_element_mean_loss(loss, self._last_loss_numel)
 
             def compute_loss(self, model, inputs, *args, **kwargs):
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
                     raise KeyboardInterrupt("Stopped before loss computation")
-                # Forward args transparently: gliner's Trainer.compute_loss only
-                # accepts (model, inputs); injecting return_outputs raises TypeError.
-                return super().compute_loss(model, inputs, *args, **kwargs)
+                # Mirror gliner's Trainer.compute_loss forward exactly so the
+                # returned (summed) loss — and thus backprop — is unchanged,
+                # while also capturing the score-tensor element count used to
+                # normalize the reported loss (see training_step / log).
+                outputs = model(
+                    alpha=self.args.focal_loss_alpha,
+                    gamma=self.args.focal_loss_gamma,
+                    prob_margin=self.args.focal_loss_prob_margin,
+                    label_smoothing=self.args.label_smoothing,
+                    reduction=self.args.loss_reduction,
+                    negatives=self.args.negatives,
+                    masking=self.args.masking,
+                    **inputs,
+                )
+                logits = outputs.logits
+                self._last_loss_numel = int(logits.numel()) if logits is not None else 0
+                return outputs.loss
+
+            def prediction_step(
+                self, model, inputs, prediction_loss_only, ignore_keys=None
+            ):
+                # Mirror gliner's Trainer.prediction_step (model defaults to a
+                # sum-reduced loss here too). Eval does no backprop, so we
+                # normalize the reported eval loss to the same per-element mean
+                # scale as the training curve.
+                with torch.no_grad():
+                    with self.compute_loss_context_manager():
+                        outputs = model(**inputs)
+                    loss = outputs.loss
+                    logits = outputs.logits
+                    labels = inputs["labels"]
+                if loss is not None and logits is not None and logits.numel():
+                    loss = _per_element_mean_loss(loss, int(logits.numel()))
+                if prediction_loss_only:
+                    return (loss, None, None)
+                return (loss, logits, labels)
 
             def log(self, logs: dict, *args: Any, **kwargs: Any) -> None:
                 super().log(logs, *args, **kwargs)
