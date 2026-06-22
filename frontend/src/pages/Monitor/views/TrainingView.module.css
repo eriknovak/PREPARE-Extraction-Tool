@@ -133,6 +133,49 @@
   color: var(--color-text-muted);
 }
 
+/* ------------------ BASE MODEL INFO ------------------ */
+
+.modelInfo {
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  max-width: 480px;
+}
+
+.modelInfo__desc {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.modelInfo__specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.modelInfo__spec {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.modelInfo__term {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.modelInfo__value {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
 /* ------------------ WARNING ------------------ */
 
 .warning {
