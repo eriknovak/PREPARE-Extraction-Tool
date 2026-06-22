@@ -15,8 +15,7 @@ export const METRIC_OPTIONS: { value: MetricMode; label: string }[] = [
 const AGGREGATE_LABELS = new Set(["micro avg", "macro avg", "weighted avg"]);
 
 /** Strip combining diacritics so label keys compare/sort consistently. */
-export const normalizeLabel = (label: string): string =>
-  label.normalize("NFD").replace(/[̀-ͯ]/g, "");
+export const normalizeLabel = (label: string): string => label.normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 /** Read a single metric from a per-label entry, with sensible fallbacks. */
 export const readMetric = (m: PerLabelMetrics, mode: MetricMode): number => {
@@ -37,18 +36,54 @@ const isLabelRow = (label: string): boolean => !AGGREGATE_LABELS.has(label.toLow
 /** Loss curve data for the training line chart. */
 export interface LossSeries {
   xData: number[];
-  loss: number[];
+  /** Train loss per x-point; null where only an eval point exists. */
+  loss: (number | null)[];
   evalLoss: (number | null)[];
   /** True when any metric point carries a `step` value (prefer step over epoch on x-axis). */
   hasStep: boolean;
 }
 
+/**
+ * Shape raw metric rows into aligned train/eval loss series for the line chart.
+ *
+ * The trainer streams a step's train loss and its eval loss as *separate* rows,
+ * and (for some runs) also a redundant step-less `epoch_update` row carrying the
+ * same loss. When any row has a `step`, that's the authoritative x-axis: we
+ * coalesce rows sharing a step into one point (merging train + eval loss) and
+ * drop the step-less orphans, so the two series overlay cleanly instead of the
+ * orphans piling up as stray trailing x-categories.
+ *
+ * Legacy runs that only ever persisted step-less rows have no reliable unique x
+ * (their fractional epochs are int-truncated, so values repeat). For those we
+ * keep every row in order against its epoch label rather than collapsing
+ * distinct loss points together.
+ */
 export const buildLossSeries = (metrics: TrainingMetric[]): LossSeries => {
   const hasStep = metrics.some((m) => m.step != null);
+
+  if (!hasStep) {
+    return {
+      xData: metrics.map((m) => m.epoch),
+      loss: metrics.map((m) => m.loss ?? null),
+      evalLoss: metrics.map((m) => m.eval_loss ?? null),
+      hasStep,
+    };
+  }
+
+  const byStep = new Map<number, { loss: number | null; evalLoss: number | null }>();
+  for (const m of metrics) {
+    if (m.step == null) continue;
+    const point = byStep.get(m.step) ?? { loss: null, evalLoss: null };
+    if (m.loss != null) point.loss = m.loss;
+    if (m.eval_loss != null) point.evalLoss = m.eval_loss;
+    byStep.set(m.step, point);
+  }
+
+  const steps = [...byStep.keys()].sort((a, b) => a - b);
   return {
-    xData: hasStep ? metrics.map((m) => m.step ?? m.epoch) : metrics.map((m) => m.epoch),
-    loss: metrics.map((m) => m.loss),
-    evalLoss: metrics.map((m) => m.eval_loss ?? null),
+    xData: steps,
+    loss: steps.map((s) => byStep.get(s)!.loss),
+    evalLoss: steps.map((s) => byStep.get(s)!.evalLoss),
     hasStep,
   };
 };
@@ -72,12 +107,8 @@ export interface PerformanceData {
   recall: number[];
 }
 
-export const buildPerformanceData = (
-  evaluation: EvaluationResponse | null
-): PerformanceData => {
-  const entries = Object.entries(evaluation?.per_label ?? {}).filter(([label]) =>
-    isLabelRow(label)
-  );
+export const buildPerformanceData = (evaluation: EvaluationResponse | null): PerformanceData => {
+  const entries = Object.entries(evaluation?.per_label ?? {}).filter(([label]) => isLabelRow(label));
 
   return {
     categories: entries.map(([label]) => label),
@@ -98,10 +129,7 @@ export interface ComparisonMatrix {
   cells: HeatmapCell[];
 }
 
-export const buildComparisonMatrix = (
-  evaluations: EvaluationResponse[],
-  mode: MetricMode
-): ComparisonMatrix => {
+export const buildComparisonMatrix = (evaluations: EvaluationResponse[], mode: MetricMode): ComparisonMatrix => {
   const xLabels = Array.from(
     new Set(
       evaluations.flatMap((run) =>

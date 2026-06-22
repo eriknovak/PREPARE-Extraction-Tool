@@ -577,10 +577,11 @@ export interface RunErrorAnalysis {
   per_label: { [label: string]: LabelErrorAnalysis };
 }
 
-/** A single training metric point streamed over the websocket. */
+/** A single training metric point streamed over the websocket.
+ *  `loss` is null on eval-only rows (which carry `eval_loss` instead). */
 export interface TrainingMetric {
   epoch: number;
-  loss: number;
+  loss: number | null;
   step?: number | null;
   eval_loss?: number | null;
 }

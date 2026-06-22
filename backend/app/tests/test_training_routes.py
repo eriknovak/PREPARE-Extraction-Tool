@@ -17,11 +17,11 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from app.core.database import get_session
 from app.main import app
-from app.models_db import Dataset, Record, User
+from app.models_db import Dataset, Record, TrainingMetric, TrainingRun, User
 from app.routes.v1.auth import get_current_user
 
 
@@ -634,3 +634,32 @@ def test_start_training_blocks_genuinely_active_run(client, monkeypatch):
     assert resp.status_code == 409
     client.session.expire_all()
     assert client.session.get(TrainingRun, active.id).status == "running"
+
+
+def test_epoch_update_not_persisted_but_train_log_is(client):
+    """train_log is the single source of truth for the loss curve; the redundant
+    epoch_update tick must not persist a duplicate (step-less) metric row."""
+    db = client.session
+    run = TrainingRun(
+        dataset_id=client.dataset_id, base_model="m", labels=["Drug"], val_ratio=0.1
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+
+    r1 = client.post(
+        "/api/v1/bioner/internal/training-events",
+        json={"type": "train_log", "run_id": run.id, "step": 1, "epoch": 0.5, "loss": 1.23},
+    )
+    assert r1.status_code == 200
+
+    r2 = client.post(
+        "/api/v1/bioner/internal/training-events",
+        json={"type": "epoch_update", "run_id": run.id, "epoch": 0.5, "loss": 1.23},
+    )
+    assert r2.status_code == 200
+
+    rows = db.exec(select(TrainingMetric).where(TrainingMetric.run_id == run.id)).all()
+    assert len(rows) == 1
+    assert rows[0].step == 1
+    assert rows[0].loss == 1.23
