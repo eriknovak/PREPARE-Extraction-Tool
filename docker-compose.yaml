@@ -4,7 +4,6 @@
 name: prepare-extraction-tool
 
 services:
-
   postgres:
     image: postgres:18
     container_name: PREPARE-POSTGRESQL
@@ -65,7 +64,7 @@ services:
       timeout: 10s
 
   backend:
-    image: '${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}'
+    image: "${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}"
     container_name: PREPARE-BACKEND
     restart: unless-stopped
     expose:
@@ -109,7 +108,7 @@ services:
       context: ./backend
 
   frontend:
-    image: '${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}'
+    image: "${DOCKER_IMAGE_FRONTEND?Variable not set}:${TAG-latest}"
     container_name: PREPARE-FRONTEND
     restart: unless-stopped
     ports:
@@ -166,7 +165,8 @@ services:
       # Backend reachable by compose service name inside the network (overrides .env localhost)
       - BACKEND_HOST=http://backend:8000
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]
+      test:
+        ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]
       interval: 15s
       timeout: 10s
       retries: 5
