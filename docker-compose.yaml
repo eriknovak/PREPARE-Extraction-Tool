@@ -164,6 +164,9 @@ services:
       - HF_HOME=/.cache
       # Backend reachable by compose service name inside the network (overrides .env localhost)
       - BACKEND_HOST=http://backend:8000
+      # GLiNER fine-tuning window budget (read by app/core/settings.py)
+      - BIONER_TRAIN_MAX_TOKENS=${BIONER_TRAIN_MAX_TOKENS:-256}
+      - BIONER_TRAIN_CONTEXT_PAD=${BIONER_TRAIN_CONTEXT_PAD:-64}
     healthcheck:
       test:
         ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]
