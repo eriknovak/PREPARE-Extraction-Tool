@@ -21,12 +21,14 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
 import app.routes.v1.bioner as bioner
+from app.interfaces import LabelsInput
 from app.models_db import (
     Dataset,
     ExtractionJob,
     Model,
     Record,
     SourceTerm,
+    SourceTermEx,
     User,
 )
 
@@ -147,7 +149,6 @@ def _run_job(engine, dataset_id, model_id):
         job_id=job_id,
         dataset_id=dataset_id,
         labels=["Drug"],
-        model_id=model_id,
     )
     return job_id
 
@@ -206,3 +207,47 @@ def test_reextraction_reprocesses_eligible_records_on_rerun(engine, monkeypatch)
             select(SourceTerm).where(SourceTerm.record_id == rec_manual)
         ).all()
         assert [t.value for t in manual] == ["paracetamol"]
+
+    # Extraction owns only SourceTerm; SourceTermEx is never written here.
+    with Session(engine) as s:
+        assert s.exec(select(SourceTermEx)).all() == []
+
+
+def test_single_record_extract_writes_only_source_term(engine, monkeypatch):
+    dataset_id, model_id, rec_auto, rec_reviewed, rec_manual = _seed(engine)
+
+    calls = []
+
+    def fake_post(url, json=None, timeout=None):
+        calls.append(json["medical_text"])
+        return _FakeResponse(
+            [{"text": "aspirin", "label": "Drug", "start": 0, "end": 7, "score": 0.9}]
+        )
+
+    monkeypatch.setattr(bioner.requests, "post", fake_post)
+
+    with Session(engine) as s:
+        user = s.exec(select(User)).first()
+
+        # First extract: stale auto term refreshed, only SourceTerm written.
+        bioner.extract_entities_from_record(
+            dataset_id=dataset_id,
+            record_id=rec_auto,
+            labels=LabelsInput(labels=["Drug"]),
+            current_user=user,
+            db=s,
+        )
+        assert _auto_values(s, rec_auto) == ["aspirin"]
+        assert s.exec(select(SourceTermEx)).all() == []
+
+        # Explicit re-extract always re-runs the model (no cached-restore shortcut).
+        bioner.extract_entities_from_record(
+            dataset_id=dataset_id,
+            record_id=rec_auto,
+            labels=LabelsInput(labels=["Drug"]),
+            current_user=user,
+            db=s,
+        )
+        assert calls == ["aspirin 100mg", "aspirin 100mg"]
+        assert _auto_values(s, rec_auto) == ["aspirin"]
+        assert s.exec(select(SourceTermEx)).all() == []

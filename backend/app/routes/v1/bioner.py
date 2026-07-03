@@ -26,7 +26,6 @@ from app.models_db import (
     Model,
     Record,
     SourceTerm,
-    SourceTermEx,
     TrainingRun,
 )
 from app.routes.v1.auth import get_current_user
@@ -124,82 +123,13 @@ def extract_entities_from_record(
             message=f"Record {record_id} is reviewed; extraction skipped"
         )
 
-    # Resolve the active model id (DB-only for a global selection; queries bioner
-    # for the default). Note: this route does NOT create an ExtractionJob, so it
-    # is outside the extraction-active lock (which only inspects ExtractionJob
-    # rows). That is an accepted limitation — single-record extraction is
-    # synchronous and short-lived; the lock covers batch jobs only.
-    model_id = resolve_active_model(db)
-
-    already_extracted_terms = db.exec(
-        select(SourceTermEx)
-        .where(SourceTermEx.record_id == record_id)
-        .where(SourceTermEx.model_id == model_id)
-    ).all()
-
-    if already_extracted_terms:
-        current_auto_terms = db.exec(
-            select(SourceTerm)
-            .where(SourceTerm.record_id == record_id)
-            .where(SourceTerm.automatically_extracted == True)  # noqa: E712
-        ).all()
-
-        st_keys = {
-            (t.value, t.label, t.start_position, t.end_position)
-            for t in current_auto_terms
-        }
-
-        stex_keys = {
-            (t.value, t.label, t.start_position, t.end_position)
-            for t in already_extracted_terms
-        }
-
-        if st_keys != stex_keys:
-            for term in current_auto_terms:
-                db.delete(term)
-            db.flush()
-
-            existing_source_term_keys = {
-                (t.value, t.label, t.start_position, t.end_position)
-                for t in db.exec(
-                    select(SourceTerm).where(SourceTerm.record_id == record_id)
-                ).all()
-            }
-
-            new_terms = []
-            for ex in already_extracted_terms:
-                key = (ex.value, ex.label, ex.start_position, ex.end_position)
-
-                if key in existing_source_term_keys:
-                    continue
-
-                existing_source_term_keys.add(key)
-                new_terms.append(
-                    SourceTerm(
-                        record_id=record_id,
-                        value=ex.value,
-                        label=ex.label,
-                        start_position=ex.start_position,
-                        end_position=ex.end_position,
-                        score=ex.score,
-                        automatically_extracted=True,
-                    )
-                )
-
-            if new_terms:
-                db.add_all(new_terms)
-                db.flush()
-                link_dates_for_record(db, record, dataset)
-
-            db.commit()
-
-            return MessageOutput(
-                message=f"Record {record_id} was already extracted with this model; SourceTerms were restored from SourceTermEx."
-            )
-
-        return MessageOutput(
-            message=f"Record {record_id} was already extracted with this model; extraction skipped."
-        )
+    # This route does NOT create an ExtractionJob, so it is outside the
+    # extraction-active lock (which only inspects ExtractionJob rows). That is an
+    # accepted limitation — single-record extraction is synchronous and
+    # short-lived; the lock covers batch jobs only.
+    #
+    # An explicit single-record (re-)extract always re-runs the model and writes
+    # SourceTerm fresh — no shortcut restoring cached terms.
 
     # Delete only automatically extracted SourceTerms for this record
     auto_terms = db.exec(
@@ -236,7 +166,6 @@ def extract_entities_from_record(
 
     seen_in_response = set()
     new_terms: List[SourceTerm] = []
-    ex_terms: List[SourceTermEx] = []
 
     for entity in entities:
         key = (entity["text"], entity["label"], entity["start"], entity["end"])
@@ -244,17 +173,6 @@ def extract_entities_from_record(
         if key in seen_in_response:
             continue
         seen_in_response.add(key)
-        ex_terms.append(
-            SourceTermEx(
-                record_id=record_id,
-                value=entity["text"],
-                label=entity["label"],
-                start_position=entity["start"],
-                end_position=entity["end"],
-                score=entity.get("score"),
-                model_id=model_id,
-            )
-        )
 
         if key in existing_keys:
             continue
@@ -276,10 +194,6 @@ def extract_entities_from_record(
         db.flush()
         link_dates_for_record(db, record, dataset)
         auto_link_entities_for_record(db, record, dataset)
-
-    if ex_terms:
-        db.add_all(ex_terms)
-        db.flush()
 
     db.commit()
 
@@ -386,7 +300,6 @@ def extract_entities_from_records(
         job_id=job.id,
         dataset_id=dataset_id,
         labels=labels.labels,
-        model_id=model_id,
     )
 
     return ExtractionJobStartResponse(
@@ -523,9 +436,7 @@ def cancel_extraction_job(
     return MessageOutput(message="Cancellation requested")
 
 
-def run_dataset_extraction_job(
-    job_id: int, dataset_id: int, labels: List[str], model_id: int
-):
+def run_dataset_extraction_job(job_id: int, dataset_id: int, labels: List[str]):
     """Background task that extracts entities for each unreviewed record."""
 
     with Session(engine) as session:
@@ -550,10 +461,10 @@ def run_dataset_extraction_job(
         # Reprocess every record except reviewed ones and records the user changed
         # manually. A manually created or edited term has
         # automatically_extracted == False, and such records must keep all their
-        # terms untouched. Extraction history (SourceTermEx) must NOT gate
-        # reprocessing: gating on it made a re-run skip every record ever processed,
-        # so "delete all entities" + re-extract (or any repeat run) re-extracted
-        # nothing.
+        # terms untouched. Skipping is decided purely from SourceTerm state:
+        # a prior version gated on SourceTermEx history, which made a re-run skip
+        # every record ever processed, so "delete all entities" + re-extract (or
+        # any repeat run) re-extracted nothing.
         unreviewed_records = [r for r in records if not r.reviewed]
         processed_records = []
         records_to_process: List[Record] = []
@@ -622,24 +533,12 @@ def run_dataset_extraction_job(
             seen_in_response = set()
 
             new_terms: List[SourceTerm] = []
-            ex_terms: List[SourceTermEx] = []
             for entity in entities:
                 key = (entity["text"], entity["label"], entity["start"], entity["end"])
 
                 if key in seen_in_response:
                     continue
                 seen_in_response.add(key)
-                ex_terms.append(
-                    SourceTermEx(
-                        record_id=record.id,
-                        value=entity["text"],
-                        label=entity["label"],
-                        start_position=entity["start"],
-                        end_position=entity["end"],
-                        score=entity.get("score"),
-                        model_id=model_id,
-                    )
-                )
 
                 if key in existing_keys:
                     continue
@@ -661,9 +560,6 @@ def run_dataset_extraction_job(
                 session.flush()
                 link_dates_for_record(session, record, dataset)
                 auto_link_entities_for_record(session, record, dataset)
-            if ex_terms:
-                session.add_all(ex_terms)
-                session.flush()
 
             job.completed += 1
             job.updated_at = datetime.now(timezone.utc)
