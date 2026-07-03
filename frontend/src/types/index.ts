@@ -430,10 +430,22 @@ export interface AutoMapAllRequest {
   search_type?: "vector" | "hybrid";
 }
 
-export interface AutoMapAllResponse {
+export interface MappingJobStartResponse {
+  job_id: string;
+  dataset_id: number;
+  total: number;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+}
+
+export interface MappingJobStatusResponse {
+  job_id: string;
+  dataset_id: number;
+  total: number;
+  completed: number;
   mapped_count: number;
   failed_count: number;
-  total_clusters: number;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  error_message?: string | null;
 }
 
 export interface ConceptSearchParams {
