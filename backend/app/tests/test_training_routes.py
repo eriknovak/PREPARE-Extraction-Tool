@@ -95,7 +95,14 @@ def test_full_stats_shape(client):
     resp = client.get(f"/api/v1/bioner/datasets/{client.dataset_id}/full-stats")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) >= {"totalRecords", "totalTerms", "labelDistribution"}
+    assert set(body) >= {
+        "totalRecords",
+        "totalTerms",
+        "labelDistribution",
+        "reviewedRecords",
+        "reviewedTerms",
+        "reviewedLabelDistribution",
+    }
     assert body["totalRecords"] >= 1
 
 
@@ -106,8 +113,107 @@ def test_full_stats_multi_shape(client):
     )
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) >= {"totalRecords", "totalTerms", "labelDistribution"}
+    assert set(body) >= {
+        "totalRecords",
+        "totalTerms",
+        "labelDistribution",
+        "reviewedRecords",
+        "reviewedTerms",
+        "reviewedLabelDistribution",
+    }
     assert body["totalRecords"] >= 1
+
+
+def test_full_stats_scopes_reviewed_to_training_eligible(client):
+    """reviewed_* counts only reviewed records + terms with valid offsets.
+
+    The fixture dataset already has one unreviewed record with no terms. Add:
+      - a reviewed record with two well-formed terms (Drug, Disease) and one
+        term with null positions (excluded from the reviewed term count);
+      - an unreviewed record with a well-formed term whose label (Symptom)
+        exists ONLY in unreviewed data (→ 0 reviewed, 1 total).
+    """
+    from datetime import datetime, timezone
+
+    from app.models_db import Record, SourceTerm
+
+    db = client.session
+
+    reviewed_rec = Record(
+        patient_id="p2",
+        visit_date=datetime.now(timezone.utc),
+        text="aspirin and diabetes",
+        dataset_id=client.dataset_id,
+        reviewed=True,
+    )
+    unreviewed_rec = Record(
+        patient_id="p3",
+        visit_date=datetime.now(timezone.utc),
+        text="cough",
+        dataset_id=client.dataset_id,
+        reviewed=False,
+    )
+    db.add(reviewed_rec)
+    db.add(unreviewed_rec)
+    db.commit()
+    db.refresh(reviewed_rec)
+    db.refresh(unreviewed_rec)
+
+    db.add_all(
+        [
+            # Reviewed + valid offsets -> counted.
+            SourceTerm(
+                value="aspirin",
+                label="Drug",
+                start_position=0,
+                end_position=7,
+                record_id=reviewed_rec.id,
+            ),
+            SourceTerm(
+                value="diabetes",
+                label="Disease",
+                start_position=12,
+                end_position=20,
+                record_id=reviewed_rec.id,
+            ),
+            # Reviewed but null offsets -> excluded from reviewed term count.
+            SourceTerm(
+                value="aspirin",
+                label="Drug",
+                start_position=None,
+                end_position=None,
+                record_id=reviewed_rec.id,
+            ),
+            # Unreviewed record -> excluded from all reviewed_* figures.
+            SourceTerm(
+                value="cough",
+                label="Symptom",
+                start_position=0,
+                end_position=5,
+                record_id=unreviewed_rec.id,
+            ),
+        ]
+    )
+    db.commit()
+
+    resp = client.post(
+        "/api/v1/bioner/datasets/full-stats",
+        json={"dataset_ids": [client.dataset_id]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Totals: 3 records (fixture + 2), 4 terms, all labels present.
+    assert body["totalRecords"] == 3
+    assert body["totalTerms"] == 4
+    assert body["labelDistribution"] == {"Drug": 2, "Disease": 1, "Symptom": 1}
+
+    # Reviewed: only the reviewed record; its null-offset term is excluded.
+    assert body["reviewedRecords"] == 1
+    assert body["reviewedTerms"] == 2
+    assert body["reviewedLabelDistribution"] == {"Drug": 1, "Disease": 1}
+    # Symptom exists only in unreviewed data -> absent from reviewed dist.
+    assert "Symptom" not in body["reviewedLabelDistribution"]
 
 
 def test_start_multi_dataset_records_links(client):
@@ -428,6 +534,10 @@ def test_start_training_snapshots_train_stats(client):
     assert run is not None
     assert run.train_stats is not None
     assert run.train_stats["record_count"] >= 1
+    # The snapshot also carries the reviewed, training-eligible subset.
+    assert "reviewed_record_count" in run.train_stats
+    assert "reviewed_term_count" in run.train_stats
+    assert "reviewed_label_distribution" in run.train_stats
     assert client.dataset_id in run.train_stats["train_dataset_ids"]
 
 

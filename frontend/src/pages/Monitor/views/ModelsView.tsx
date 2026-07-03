@@ -68,7 +68,13 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
   const trainedF1Values = labels.map((l) => detail.per_label_trained[l]?.exact_f1 ?? 0);
 
   // ── Stats ──
+  // Headline the reviewed subset (what actually trained). Older snapshots
+  // predate the reviewed_* fields, so fall back to the total counts.
   const stats = detail.train_stats;
+  const trainedRecords = stats?.reviewed_record_count ?? stats?.record_count;
+  const trainedTerms = stats?.reviewed_term_count ?? stats?.term_count;
+  const hasReviewedRecords = stats?.reviewed_record_count != null;
+  const hasReviewedTerms = stats?.reviewed_term_count != null;
   const labelDist = stats?.label_distribution ?? {};
   const distLabels = Object.keys(labelDist);
 
@@ -152,16 +158,26 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
       {/* ── Training stats ── */}
       <Card title="Training statistics">
         <div className={styles.statsGrid}>
-          {stats?.record_count != null && (
+          {trainedRecords != null && (
             <div className={styles.statItem}>
-              <span className={styles.statLabel}>Records</span>
-              <span className={styles.statValue}>{stats.record_count.toLocaleString()}</span>
+              <span className={styles.statLabel}>Records (trained on)</span>
+              <span className={styles.statValue}>
+                {trainedRecords.toLocaleString()}
+                {hasReviewedRecords && stats?.record_count != null && (
+                  <span className={styles.statSub}> of {stats.record_count.toLocaleString()}</span>
+                )}
+              </span>
             </div>
           )}
-          {stats?.term_count != null && (
+          {trainedTerms != null && (
             <div className={styles.statItem}>
-              <span className={styles.statLabel}>Terms</span>
-              <span className={styles.statValue}>{stats.term_count.toLocaleString()}</span>
+              <span className={styles.statLabel}>Terms (trained on)</span>
+              <span className={styles.statValue}>
+                {trainedTerms.toLocaleString()}
+                {hasReviewedTerms && stats?.term_count != null && (
+                  <span className={styles.statSub}> of {stats.term_count.toLocaleString()}</span>
+                )}
+              </span>
             </div>
           )}
           {detail.train_dataset_ids.length > 0 && (

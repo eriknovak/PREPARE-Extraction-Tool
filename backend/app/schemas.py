@@ -830,9 +830,14 @@ class FullStatsRequest(BaseModel):
 
 
 class FullStatsResponse(BaseModel):
+    # Totals over the whole dataset(s).
     totalRecords: int
     totalTerms: int
     labelDistribution: Dict[str, int]
+    # Reviewed, training-eligible subset (what actually trains/evaluates).
+    reviewedRecords: int
+    reviewedTerms: int
+    reviewedLabelDistribution: Dict[str, int]
 
 
 # ================================================

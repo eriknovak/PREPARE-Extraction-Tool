@@ -1000,9 +1000,21 @@ def stop_training(
 def _compute_dataset_stats(db: Session, dataset_ids: list) -> dict:
     """Compute aggregated stats across the given dataset IDs.
 
-    Returns a dict with ``record_count``, ``term_count``, and
-    ``label_distribution`` (label -> count mapping).
+    Returns both TOTAL stats (every record/term in the datasets) and REVIEWED
+    stats (only the training-eligible subset). Training and evaluation use only
+    reviewed records with valid character offsets — see
+    ``gliner_data_service.load_reviewed_training_data`` — so the reviewed_*
+    figures mirror what actually trains.
+
+    Keys:
+        ``record_count`` / ``term_count`` / ``label_distribution`` — TOTAL over
+            the whole dataset (kept as-is for back-compat).
+        ``reviewed_record_count`` / ``reviewed_term_count`` /
+            ``reviewed_label_distribution`` — the reviewed, training-eligible
+            subset (``Record.reviewed`` is True and the term has non-null
+            ``start_position`` and ``end_position``).
     """
+    # --- TOTAL: whole dataset ---
     record_count = db.exec(
         select(func.count(Record.id)).where(Record.dataset_id.in_(dataset_ids))
     ).one()
@@ -1017,11 +1029,51 @@ def _compute_dataset_stats(db: Session, dataset_ids: list) -> dict:
         .where(Record.dataset_id.in_(dataset_ids))
         .group_by(SourceTerm.label)
     ).all()
+
+    # --- REVIEWED: mirror the trainer's predicate exactly ---
+    reviewed_record_count = db.exec(
+        select(func.count(Record.id))
+        .where(Record.dataset_id.in_(dataset_ids))
+        .where(Record.reviewed == True)  # noqa: E712
+    ).one()
+    reviewed_term_where = (
+        Record.dataset_id.in_(dataset_ids),
+        Record.reviewed == True,  # noqa: E712
+        SourceTerm.start_position.is_not(None),
+        SourceTerm.end_position.is_not(None),
+    )
+    reviewed_term_count = db.exec(
+        select(func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(*reviewed_term_where)
+    ).one()
+    reviewed_rows = db.exec(
+        select(SourceTerm.label, func.count(SourceTerm.id))
+        .join(Record, Record.id == SourceTerm.record_id)
+        .where(*reviewed_term_where)
+        .group_by(SourceTerm.label)
+    ).all()
+
     return {
         "record_count": record_count,
         "term_count": term_count,
         "label_distribution": {label: count for label, count in rows},
+        "reviewed_record_count": reviewed_record_count,
+        "reviewed_term_count": reviewed_term_count,
+        "reviewed_label_distribution": {label: count for label, count in reviewed_rows},
     }
+
+
+def _full_stats_response(stats: dict) -> FullStatsResponse:
+    """Serialize ``_compute_dataset_stats`` output into the API response."""
+    return FullStatsResponse(
+        totalRecords=stats["record_count"],
+        totalTerms=stats["term_count"],
+        labelDistribution=stats["label_distribution"],
+        reviewedRecords=stats["reviewed_record_count"],
+        reviewedTerms=stats["reviewed_term_count"],
+        reviewedLabelDistribution=stats["reviewed_label_distribution"],
+    )
 
 
 @router.get("/datasets/{dataset_id}/full-stats", response_model=FullStatsResponse)
@@ -1030,25 +1082,7 @@ def full_stats(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    total_records = db.exec(
-        select(func.count(Record.id)).where(Record.dataset_id == dataset_id)
-    ).one()
-    total_terms = db.exec(
-        select(func.count(SourceTerm.id))
-        .join(Record, Record.id == SourceTerm.record_id)
-        .where(Record.dataset_id == dataset_id)
-    ).one()
-    rows = db.exec(
-        select(SourceTerm.label, func.count(SourceTerm.id))
-        .join(Record, Record.id == SourceTerm.record_id)
-        .where(Record.dataset_id == dataset_id)
-        .group_by(SourceTerm.label)
-    ).all()
-    return FullStatsResponse(
-        totalRecords=total_records,
-        totalTerms=total_terms,
-        labelDistribution={label: count for label, count in rows},
-    )
+    return _full_stats_response(_compute_dataset_stats(db, [dataset_id]))
 
 
 @router.post("/datasets/full-stats", response_model=FullStatsResponse)
@@ -1058,12 +1092,7 @@ def full_stats_multi(
     db: Session = Depends(get_session),
 ):
     """Aggregate record/term counts and label distribution across datasets."""
-    stats = _compute_dataset_stats(db, req.dataset_ids)
-    return FullStatsResponse(
-        totalRecords=stats["record_count"],
-        totalTerms=stats["term_count"],
-        labelDistribution=stats["label_distribution"],
-    )
+    return _full_stats_response(_compute_dataset_stats(db, req.dataset_ids))
 
 
 def _run_summary(db: Session, run: TrainingRun) -> TrainingRunSummary:
