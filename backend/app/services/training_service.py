@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+import requests
 from sqlmodel import Session, func, select
 
 from app.models_db import (
@@ -14,7 +15,7 @@ from app.models_db import (
     TrainingRun,
     TrainingRunDatasetLink,
 )
-from app.services import evaluation_service
+from app.services import bioner_client, evaluation_service
 
 
 def create_run(
@@ -209,6 +210,8 @@ def _ensure_model(db: Session, run: TrainingRun) -> Model:
         version=datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S"),
         base_model=run.base_model,
         dataset_id=run.dataset_id,
+        source="trained",
+        engine="gliner",
     )
     db.add(model)
     db.commit()
@@ -244,6 +247,7 @@ def _ensure_baseline_model(db: Session, run: TrainingRun) -> Model:
         version="baseline",
         base_model=run.base_model,
         dataset_id=run.dataset_id,
+        source="baseline",
     )
     db.add(model)
     db.commit()
@@ -662,3 +666,81 @@ def delete_run(db: Session, run_id: int) -> bool:
     db.delete(run)
     db.commit()
     return True
+
+
+# ---------------------------------------------------------------------------
+# On-disk model discovery / reconciliation
+# ---------------------------------------------------------------------------
+
+
+def _norm_path(path: str) -> str:
+    """Normalize a filesystem path for comparison (drop a trailing slash)."""
+    return path.rstrip("/")
+
+
+def discover_models(db: Session) -> dict:
+    """Reconcile the ``Model`` table with bioner's on-disk model folders.
+
+    FAIL-SAFE: if the bioner scan is unreachable/errors, do nothing (no upserts,
+    no deletes) and report ``ok=False`` — a transient bioner outage must never
+    mass-delete models.
+
+    On success:
+    - upsert: create a ``discovered`` Model row for each scanned folder that has
+      no existing row matched by ``path`` (trained runs already carry their path).
+    - delete-missing: delete a Model row IFF its ``path`` is set, points into the
+      scanned models dir, and its folder is absent from the scan. Rows with
+      ``path IS NULL`` (baseline/launch-default anchors, HF-only rows) are never
+      deleted. This cascade-removes the row's Evaluation rows (accepted).
+
+    Returns scan meta the caller uses to enrich the reconciled list:
+    ``{ok, current_engine, default_model, scan_by_path}`` where ``scan_by_path``
+    maps a normalized path -> its scan entry (engine, is_adapter, ...).
+    """
+    try:
+        scan = bioner_client.get_available_models()
+    except requests.RequestException:
+        return {
+            "ok": False,
+            "current_engine": None,
+            "default_model": None,
+            "scan_by_path": {},
+        }
+
+    scanned = scan.get("models", []) or []
+    scanned_by_path = {_norm_path(m["path"]): m for m in scanned}
+    scanned_paths = set(scanned_by_path)
+
+    # Upsert discovered folders that have no existing row for their path.
+    for m in scanned:
+        path = m["path"]
+        existing = db.exec(select(Model).where(Model.path == path)).first()
+        if existing is None:
+            db.add(
+                Model(
+                    name=m["dir_name"],
+                    version=m.get("version") or "local",
+                    path=path,
+                    source="discovered",
+                    engine=m.get("engine"),
+                )
+            )
+    db.commit()
+
+    # Delete-missing, scoped strictly to folders under the scanned models dir.
+    models_dir = scan.get("models_dir")
+    if models_dir:
+        prefix = _norm_path(models_dir) + "/"
+        rows = db.exec(select(Model).where(Model.path.is_not(None))).all()
+        for row in rows:
+            p = _norm_path(row.path)
+            if p.startswith(prefix) and p not in scanned_paths:
+                db.delete(row)
+        db.commit()
+
+    return {
+        "ok": True,
+        "current_engine": scan.get("current_engine"),
+        "default_model": scan.get("default_model"),
+        "scan_by_path": scanned_by_path,
+    }

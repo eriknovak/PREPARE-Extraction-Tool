@@ -271,6 +271,12 @@ class Model(SQLModel, table=True):
     version: str
     base_model: Optional[str] = Field(default=None)
     path: Optional[str] = Field(default=None)
+    # Provenance of this row: "trained" (produced by a run), "discovered"
+    # (found on disk by a bioner models-dir scan), or "baseline" (comparison
+    # anchor / launch default; typically has no path).
+    source: Optional[str] = Field(default=None)
+    # Engine backing the model: "gliner" | "huggingface" (null for anchors).
+    engine: Optional[str] = Field(default=None)
     dataset_id: Optional[int] = Field(
         default=None, foreign_key="dataset.id", ondelete="SET NULL"
     )

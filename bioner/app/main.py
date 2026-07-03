@@ -174,6 +174,6 @@ if __name__ == "__main__":
     server.app.include_router(model_router)
     # Wire the activate route and reset the desired-model state to the default so
     # a stale state file from a previous run can't change the startup model.
-    register_model_context(server, args.model)
+    register_model_context(server, args.model, args.engine)
     write_desired(args.model, model_metadata)
     server.run(host=args.host, port=args.port)

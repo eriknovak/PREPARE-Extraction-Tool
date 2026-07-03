@@ -7,6 +7,7 @@ import type {
   ModelDetailResponse,
   ModelsOutput,
   ModelSummary,
+  RescanModelsResponse,
   MonitorDatasetStats,
   MonitorRun,
   RunUpdate,
@@ -67,6 +68,14 @@ export function getActiveRun() {
 export async function getModels(): Promise<ModelSummary[]> {
   const res = await apiRequest<ModelsOutput>("/bioner/models");
   return res.models;
+}
+
+/** Rescan bioner's models dir, reconcile the DB, and return the enriched list.
+ *  This is the only write path for model discovery (upsert + delete-missing). */
+export function rescanModels() {
+  return apiRequest<RescanModelsResponse>("/bioner/models/rescan", {
+    method: "POST",
+  });
 }
 
 /** The GLOBAL active extraction model (null active_model = bioner default). */

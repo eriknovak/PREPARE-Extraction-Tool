@@ -877,12 +877,42 @@ class ModelSummary(BaseModel):
     score: Optional[float] = None
     run_id: Optional[int] = None  # links a model to its training run
     is_active: bool = False  # is this the global active model?
+    # Provenance: "trained" | "discovered" | "baseline" (null on legacy rows).
+    source: Optional[str] = None
+    # Backing engine: "gliner" | "huggingface" (null for anchors).
+    engine: Optional[str] = None
 
 
 class ModelsOutput(BaseModel):
     """List of trained models available for selection."""
 
     models: List[ModelSummary]
+
+
+class DiscoveredModelSummary(ModelSummary):
+    """A model row enriched with live bioner scan info for the rescan view."""
+
+    # From the on-disk scan: a LoRA/PEFT adapter needs a base model, so it is not
+    # directly selectable as the active extraction model.
+    is_adapter: bool = False
+    # True when this model can be activated in the running bioner process:
+    # its engine matches the launch engine and it is not an adapter.
+    activatable: bool = True
+
+
+class DefaultModelInfo(BaseModel):
+    """bioner's launch default model (what /ner runs when nothing is selected)."""
+
+    name: str
+    engine: Optional[str] = None
+
+
+class RescanModelsResponse(BaseModel):
+    """Reconciled model list plus live bioner engine/default context."""
+
+    models: List[DiscoveredModelSummary]
+    current_engine: Optional[str] = None
+    default_model: Optional[DefaultModelInfo] = None
 
 
 class ModelDetailResponse(BaseModel):
