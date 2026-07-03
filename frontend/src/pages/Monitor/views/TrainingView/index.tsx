@@ -9,10 +9,10 @@ import Select from "@components/Select";
 import StatCard from "@components/StatCard";
 import type { ModelSummary } from "types";
 
-import LabelSelector from "../LabelSelector";
-import TrainingLossChart from "../charts/TrainingLossChart";
-import { useMonitor } from "../hooks/useMonitor";
-import styles from "./TrainingView.module.css";
+import LabelSelector from "../../LabelSelector";
+import TrainingLossChart from "../../charts/TrainingLossChart";
+import { useMonitor } from "../../hooks/useMonitor";
+import styles from "./styles.module.css";
 
 // Curated metadata for the predefined baselines. `params` is the model's
 // parameter count; `vramGB` is an approximate peak GPU VRAM to fine-tune at the

@@ -10,9 +10,9 @@ import { ConfirmDialog } from "@components/ConfirmDialog";
 import { BarChart, ChartState, LineChart } from "@components/charts";
 import type { DefaultModelInfo, DiscoveredModelSummary, ModelDetailResponse, TrainingMetric } from "types";
 
-import { buildLossSeries, formatEpoch, formatLoss } from "../chartData";
-import { useMonitor } from "../hooks/useMonitor";
-import styles from "./ModelsView.module.css";
+import { buildLossSeries, formatEpoch, formatLoss } from "../../chartData";
+import { useMonitor } from "../../hooks/useMonitor";
+import styles from "./styles.module.css";
 
 // ─────────────────────────────────────────────────────────────────
 // Constants
