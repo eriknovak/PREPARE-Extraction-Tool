@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useAuth } from "@hooks/useAuth";
 import { useToast } from "@hooks/useToast";
 import {
+  getActiveRun,
   getDatasets,
   getMultiDatasetStats,
   getTrainingWSUrl,
@@ -27,7 +29,18 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     toast.showToast(message, type);
   };
 
-  const [token] = useState<string | null>(() => localStorage.getItem("access_token"));
+  // The provider is mounted above the router so its state + training websocket
+  // survive page navigation. It reads the token reactively from the auth context
+  // (not once at mount) so a login after mount connects the WS, and a logout
+  // tears it down.
+  const { isAuthenticated } = useAuth();
+  const [token, setToken] = useState<string | null>(() =>
+    isAuthenticated ? localStorage.getItem("access_token") : null
+  );
+
+  useEffect(() => {
+    setToken(isAuthenticated ? localStorage.getItem("access_token") : null);
+  }, [isAuthenticated]);
 
   const [activeView, setActiveView] = useState<MonitorView>("models");
 
@@ -263,6 +276,56 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
       wsRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // ------------------ REHYDRATE IN-FLIGHT RUN ------------------
+
+  // On mount / (re)login, fetch any in-flight run and restore its progress so a
+  // run that started (or advanced, or finished) while this page was unmounted —
+  // or before a full page reload — is shown immediately, without waiting for the
+  // next websocket event and without the user having to reselect the dataset.
+  // Live WS events append seamlessly afterwards (train_log carries the global
+  // step, so currentStep stays authoritative).
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+
+    getActiveRun()
+      .then((run) => {
+        if (cancelled || !run) return;
+
+        setActiveRunId(run.run_id);
+        setIsTraining(true);
+        setTrainingStatus("Training in progress…");
+        // Drives the stats card + progress region without a manual reselect.
+        setTrainingDatasetIds(run.dataset_ids);
+
+        if (run.total_steps != null) {
+          totalStepsRef.current = run.total_steps;
+          setTotalSteps(run.total_steps);
+        }
+        if (run.num_epochs != null) {
+          totalEpochsRef.current = run.num_epochs;
+          setTotalEpochs(run.num_epochs);
+        }
+        if (run.current_step != null) {
+          setCurrentStep(run.current_step);
+          if (run.total_steps && run.total_steps > 0) {
+            setProgress(Math.min(100, Math.round((run.current_step / run.total_steps) * 100)));
+          }
+        }
+        if (run.metrics?.length) {
+          setTrainingMetrics(run.metrics);
+        }
+      })
+      .catch((err) => {
+        // Rehydration is best-effort: a failure must not crash the provider.
+        console.error("Failed to rehydrate active training run:", err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   // ------------------ TRAINING ------------------

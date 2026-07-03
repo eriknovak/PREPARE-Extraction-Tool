@@ -3,7 +3,6 @@ import { ToastContainer } from "@components/Toast/ToastContainer";
 import { usePageTitle } from "@hooks/usePageTitle";
 
 import { useMonitor } from "./hooks/useMonitor";
-import MonitorProvider from "./components/MonitorProvider";
 import MonitorHeader from "./components/MonitorHeader";
 import ViewTabs from "./components/ViewTabs";
 import ModelsView from "./views/ModelsView";
@@ -32,9 +31,7 @@ const Monitor = () => {
 
   return (
     <Layout>
-      <MonitorProvider>
-        <MonitorContent />
-      </MonitorProvider>
+      <MonitorContent />
     </Layout>
   );
 };

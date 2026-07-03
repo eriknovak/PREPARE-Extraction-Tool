@@ -31,6 +31,7 @@ from app.models_db import (
 from app.routes.v1.auth import get_current_user
 from app.schemas import (
     ActiveModelResponse,
+    ActiveTrainingRunResponse,
     ExtractionJobStartResponse,
     ExtractionJobStatusResponse,
     FullStatsRequest,
@@ -997,6 +998,53 @@ def _get_owned_run(db: Session, run_id: int, current_user: User) -> TrainingRun:
             detail="Not authorized to access this run",
         )
     return run
+
+
+@router.get("/runs/active", response_model=Optional[ActiveTrainingRunResponse])
+def active_run(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Return the current in-flight (pending/running) training run, or null.
+
+    Lets the Monitor page rehydrate live progress after navigating away and back
+    or after a full page reload: the loss curve, step counters and epoch bounds
+    are returned in one call so the UI can resume without waiting for the next
+    websocket event. Only surfaces a run the caller owns.
+    """
+    run = training_service.get_active_run(db)
+    if run is None:
+        return None
+    dataset = db.get(Dataset, run.dataset_id)
+    if dataset is not None and dataset.user_id != current_user.id:
+        return None
+
+    train_ids = training_service.get_dataset_ids(db, run.id, role="train") or [
+        run.dataset_id
+    ]
+    metrics = training_service.get_run_metrics(db, run.id)
+    ordered = sorted(
+        metrics,
+        key=lambda m: (m.step is None, m.step if m.step is not None else 0, m.epoch),
+    )
+    stats = run.train_stats or {}
+    steps = [m.step for m in metrics if m.step is not None]
+    epochs = [m.epoch for m in metrics if m.epoch is not None]
+    return ActiveTrainingRunResponse(
+        run_id=run.id,
+        dataset_ids=train_ids,
+        status=run.status,
+        total_steps=stats.get("total_steps"),
+        current_step=max(steps) if steps else None,
+        num_epochs=stats.get("num_epochs"),
+        current_epoch=max(epochs) if epochs else None,
+        metrics=[
+            TrainingMetricPoint(
+                epoch=m.epoch, loss=m.loss, step=m.step, eval_loss=m.eval_loss
+            )
+            for m in ordered
+        ],
+    )
 
 
 @router.get("/datasets/{dataset_id}/runs", response_model=TrainingRunsOutput)
