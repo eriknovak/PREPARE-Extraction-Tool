@@ -17,6 +17,35 @@
   flex-wrap: wrap;
 }
 
+/* Auto-map-all progress (replaces the toolbar buttons while a job runs) */
+.page__auto-map {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.page__auto-map-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.page__auto-map-count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.page__auto-map-progress {
+  flex: 1;
+  min-width: 160px;
+}
+
 /* ================================================
    Stats Cards
    ================================================ */

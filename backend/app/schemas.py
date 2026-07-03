@@ -646,12 +646,26 @@ class AutoMapAllRequest(BaseModel):
     search_type: str = "vector"  # "vector" or "hybrid"
 
 
-class AutoMapAllResponse(BaseModel):
-    """Response for bulk auto-mapping operation"""
+class MappingJobStartResponse(BaseModel):
+    """Response when an auto-map-all job is queued."""
 
+    job_id: int
+    dataset_id: int
+    total: int
+    status: str
+
+
+class MappingJobStatusResponse(BaseModel):
+    """Progress snapshot for an auto-map-all job."""
+
+    job_id: int
+    dataset_id: int
+    total: int
+    completed: int
     mapped_count: int
     failed_count: int
-    total_clusters: int
+    status: str
+    error_message: Optional[str] = None
 
 
 class ConceptHierarchy(BaseModel):

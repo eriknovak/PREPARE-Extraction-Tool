@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import classNames from "classnames";
 import Layout from "@/components/Layout";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -15,6 +15,7 @@ import { ToastContainer } from "@/components/Toast/ToastContainer";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faObjectGroup, faMapLocationDot, faFilePen, faArrowLeft } from "@fortawesome/free-solid-svg-icons";
 import { useDatasetExtractionJob } from "@/hooks/useDatasetExtractionJob";
+import { useAutoMapJob, type AutoMapJobProgress } from "@/hooks/useAutoMapJob";
 
 import styles from "./styles.module.css";
 
@@ -45,7 +46,6 @@ const DatasetOverview = () => {
   const [overview, setOverview] = useState<DatasetOverviewOutput | null>(null);
   const [vocabularies, setVocabularies] = useState<Vocabulary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isMappingAll, setIsMappingAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const toast = useToast();
@@ -70,6 +70,27 @@ const DatasetOverview = () => {
   }, []);
 
   const extraction = useDatasetExtractionJob(parsedDatasetId);
+
+  // Auto-map-all completion (explicit run or resumed job) toasts the counts and
+  // refreshes the overview stats.
+  const handleAutoMapComplete = useCallback(
+    async (p: AutoMapJobProgress) => {
+      if (p.status === "cancelled") {
+        toast.warning(`Auto-mapping cancelled. Mapped: ${p.mapped_count}, Failed: ${p.failed_count}`);
+      } else {
+        toast.success(`Auto-mapping complete! Mapped: ${p.mapped_count}, Failed: ${p.failed_count}`);
+      }
+      try {
+        const data = await api.getDatasetOverview(parsedDatasetId);
+        if (mountedRef.current) setOverview(data);
+      } catch {
+        // Non-critical: the toast already reported the result.
+      }
+    },
+    [toast, parsedDatasetId]
+  );
+
+  const autoMap = useAutoMapJob(parsedDatasetId, handleAutoMapComplete);
 
   usePageTitle(overview?.dataset.name || "Dataset Overview");
 
@@ -124,23 +145,24 @@ const DatasetOverview = () => {
       onConfirm: async () => {
         setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         try {
-          setIsMappingAll(true);
-          const vocabIds = vocabularies.map((v) => v.id);
-          const response = await api.autoMapAllClusters(parsedDatasetId, {
-            vocabulary_ids: vocabIds,
+          await autoMap.startAutoMap({
+            vocabulary_ids: vocabularies.map((v) => v.id),
             use_cluster_terms: true,
             search_type: "vector",
           });
-          toast.success(`Auto-mapping complete! Mapped: ${response.mapped_count}, Failed: ${response.failed_count}`);
-          const data = await api.getDatasetOverview(parsedDatasetId);
-          if (mountedRef.current) setOverview(data);
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "Failed to start mapping");
-        } finally {
-          if (mountedRef.current) setIsMappingAll(false);
         }
       },
     });
+  };
+
+  const handleCancelMapping = async () => {
+    try {
+      await autoMap.cancelAutoMap();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to cancel auto-mapping");
+    }
   };
 
   const handleExtractAll = () => {
@@ -307,6 +329,30 @@ const DatasetOverview = () => {
             </div>
           )}
 
+          {autoMap.isRunning && (
+            <div className={styles["extraction-banner"]}>
+              <span className={styles["extraction-banner__label"]}>
+                Auto-mapping in progress
+                {autoMap.progress && autoMap.progress.total > 0
+                  ? `: ${autoMap.progress.completed} / ${autoMap.progress.total} clusters`
+                  : "…"}
+              </span>
+              <div className={styles["extraction-banner__bar"]}>
+                <ProgressBar
+                  progress={
+                    autoMap.progress && autoMap.progress.total > 0
+                      ? (autoMap.progress.completed / autoMap.progress.total) * 100
+                      : 0
+                  }
+                  showPercentage
+                />
+              </div>
+              <Button variant="outline" size="small" onClick={handleCancelMapping} disabled={autoMap.isCancelling}>
+                {autoMap.isCancelling ? "Cancelling…" : "Cancel"}
+              </Button>
+            </div>
+          )}
+
           <div className={styles.workflow__grid}>
             {/* Term Extraction Card */}
             <WorkflowCard
@@ -385,10 +431,10 @@ const DatasetOverview = () => {
                   variant: "primary",
                 },
                 {
-                  label: isMappingAll ? "Mapping..." : "Start Mapping",
+                  label: autoMap.isRunning ? "Mapping..." : "Start Mapping",
                   onClick: handleStartMapping,
                   variant: "secondary",
-                  disabled: isMappingAll,
+                  disabled: autoMap.isRunning,
                 },
               ]}
             />

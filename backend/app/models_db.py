@@ -508,6 +508,34 @@ class ExtractionJob(SQLModel, table=True):
     currently_used: bool = Field(default=True)  # samo en True
 
 
+class MappingJob(SQLModel, table=True):
+    """
+    Tracks progress for dataset-wide auto-map-all runs.
+
+    Mirrors ExtractionJob: one row per bulk auto-mapping run, polled by the
+    frontend for a progress bar. `completed` ticks once per cluster processed
+    (mapped, failed, or skipped-because-already-mapped); `mapped_count` /
+    `failed_count` carry the final tallies surfaced in the success toast.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    dataset_id: int = Field(
+        foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    total: int = Field(default=0)
+    completed: int = Field(default=0)
+    mapped_count: int = Field(default=0)
+    failed_count: int = Field(default=0)
+    status: str = Field(
+        default="pending", index=True
+    )  # pending|running|completed|failed|cancelled
+    error_message: Optional[str] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 class Vocabulary(SQLModel, table=True):
     """
     Vocabulary model representing a standardized terminology system.
