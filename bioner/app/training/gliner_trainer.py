@@ -122,11 +122,6 @@ def gold_to_entities(text: str, gold: list[list]) -> list[Entity]:
     ]
 
 
-# Tokens of context kept on each side of a span group when trimming long records
-# to bounded training windows (see ``_window_example``).
-TRAIN_CONTEXT_PAD = 64
-
-
 def _token_char_starts(tokens: list[str]) -> list[int]:
     """Char start offset of each token in ``" ".join(tokens)``.
 
@@ -541,7 +536,7 @@ class GLiNERFinetuner:
                         _window_example(
                             cleaned_item,
                             settings.BIONER_TRAIN_MAX_TOKENS,
-                            TRAIN_CONTEXT_PAD,
+                            settings.BIONER_TRAIN_CONTEXT_PAD,
                         )
                     )
                 continue

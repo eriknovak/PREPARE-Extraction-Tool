@@ -13,11 +13,8 @@ Locks in two fixes:
   spans exactly.
 """
 
-from app.training.gliner_trainer import (
-    TRAIN_CONTEXT_PAD,
-    GLiNERFinetuner,
-    _window_example,
-)
+from app.core.settings import settings
+from app.training.gliner_trainer import GLiNERFinetuner, _window_example
 
 
 def _finetuner() -> GLiNERFinetuner:
@@ -71,7 +68,7 @@ def test_window_short_example_is_unchanged():
         "ner_char": [[0, 1, "L"]],
     }
 
-    out = _window_example(item, max_tokens=256, pad=TRAIN_CONTEXT_PAD)
+    out = _window_example(item, max_tokens=256, pad=settings.BIONER_TRAIN_CONTEXT_PAD)
 
     assert out == [item]
 

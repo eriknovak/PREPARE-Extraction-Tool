@@ -21,10 +21,13 @@ class Settings(BaseSettings):
             tokens before reaching the GLiNER collator, bounding the
             ``seq_len x span_width x num_classes`` score tensor (which otherwise
             makes the first CPU step crawl).
+        BIONER_TRAIN_CONTEXT_PAD (int): Tokens of context kept on each side of a
+            span group when trimming long records to training windows.
     """
 
     BACKEND_HOST: str = "http://localhost:8000"
     BIONER_TRAIN_MAX_TOKENS: int = 256
+    BIONER_TRAIN_CONTEXT_PAD: int = 64
 
     # ======================================================
     # Environment setting
