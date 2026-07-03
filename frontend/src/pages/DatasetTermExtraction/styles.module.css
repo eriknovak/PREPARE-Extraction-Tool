@@ -443,75 +443,75 @@
 
 /* Highlighted term colors - 9 distinct colors matching labels */
 .highlighted-term.label1 {
-  background: #fca5a5;
-  color: #7f1d1d;
+  background: var(--label1-bg);
+  color: var(--label1-text);
 }
 .highlighted-term.label1:hover {
-  background: #f87171;
+  background: var(--label1-hover);
 }
 
 .highlighted-term.label2 {
-  background: #c3f5e2;
-  color: #16593f;
+  background: var(--label2-bg);
+  color: var(--label2-text);
 }
 .highlighted-term.label2:hover {
-  background: #9befcf;
+  background: var(--label2-hover);
 }
 
 .highlighted-term.label3 {
-  background: #d4e6f2;
-  color: #13425e;
+  background: var(--label3-bg);
+  color: var(--label3-text);
 }
 .highlighted-term.label3:hover {
-  background: #93c1de;
+  background: var(--label3-hover);
 }
 
 .highlighted-term.label4 {
-  background: #fcffa7;
-  color: #713f12;
+  background: var(--label4-bg);
+  color: var(--label4-text);
 }
 .highlighted-term.label4:hover {
-  background: #f5fc28;
+  background: var(--label4-hover);
 }
 
 .highlighted-term.label5 {
-  background: #ffd8ef;
-  color: #61103f;
+  background: var(--label5-bg);
+  color: var(--label5-text);
 }
 .highlighted-term.label5:hover {
-  background: #ff96d3;
+  background: var(--label5-hover);
 }
 
 .highlighted-term.label6 {
-  background: #5eead4;
-  color: #134e4a;
+  background: var(--label6-bg);
+  color: var(--label6-text);
 }
 .highlighted-term.label6:hover {
-  background: #2dd4bf;
+  background: var(--label6-hover);
 }
 
 .highlighted-term.label7 {
-  background: #fdba74;
-  color: #7c2d12;
+  background: var(--label7-bg);
+  color: var(--label7-text);
 }
 .highlighted-term.label7:hover {
-  background: #fb923c;
+  background: var(--label7-hover);
 }
 
 .highlighted-term.label8 {
-  background: #c4b5fd;
-  color: #4c1d95;
+  background: var(--label8-bg);
+  color: var(--label8-text);
 }
 .highlighted-term.label8:hover {
-  background: #a78bfa;
+  background: var(--label8-hover);
 }
 
 .highlighted-term.label9 {
-  background: #94a3b8;
-  color: #1e293b;
+  background: var(--label9-bg);
+  color: var(--label9-text);
 }
 .highlighted-term.label9:hover {
-  background: #64748b;
+  background: var(--label9-hover);
 }
 
 /* Focused term (when scrolled to via View button) */
@@ -926,117 +926,117 @@
 .term-item__label.label1,
 .annotation-item__label.label1,
 .inline-label-badge.label1 {
-  background: #fca5a5;
-  color: #7f1d1d;
+  background: var(--label1-bg);
+  color: var(--label1-text);
 }
 .label-button.label1:hover,
 .label-button.label1.label-button--active {
-  background: #fca5a5;
-  border-color: #f87171;
+  background: var(--label1-hover);
+  border-color: var(--label1-border);
 }
 
 .label-button.label2,
 .term-item__label.label2,
 .annotation-item__label.label2,
 .inline-label-badge.label2 {
-  background: #c3f5e2;
-  color: #16593f;
+  background: var(--label2-bg);
+  color: var(--label2-text);
 }
 .label-button.label2:hover,
 .label-button.label2.label-button--active {
-  background: #9befcf;
-  border-color: #4ade80;
+  background: var(--label2-hover);
+  border-color: var(--label2-border);
 }
 
 .label-button.label3,
 .term-item__label.label3,
 .annotation-item__label.label3,
 .inline-label-badge.label3 {
-  background: #d4e6f2;
-  color: #13425e;
+  background: var(--label3-bg);
+  color: var(--label3-text);
 }
 .label-button.label3:hover,
 .label-button.label3.label-button--active {
-  background: #93c1de;
-  border-color: #60a5fa;
+  background: var(--label3-hover);
+  border-color: var(--label3-border);
 }
 
 .label-button.label4,
 .term-item__label.label4,
 .annotation-item__label.label4,
 .inline-label-badge.label4 {
-  background: #fcffa7;
-  color: #713f12;
+  background: var(--label4-bg);
+  color: var(--label4-text);
 }
 .label-button.label4:hover,
 .label-button.label4.label-button--active {
-  background: #f5fc28;
-  border-color: #facc15;
+  background: var(--label4-hover);
+  border-color: var(--label4-border);
 }
 
 .label-button.label5,
 .term-item__label.label5,
 .annotation-item__label.label5,
 .inline-label-badge.label5 {
-  background: #ffd8ef;
-  color: #61103f;
+  background: var(--label5-bg);
+  color: var(--label5-text);
 }
 .label-button.label5:hover,
 .label-button.label5.label-button--active {
-  background: #ff96d3;
-  border-color: #e879f9;
+  background: var(--label5-hover);
+  border-color: var(--label5-border);
 }
 
 .label-button.label6,
 .term-item__label.label6,
 .annotation-item__label.label6,
 .inline-label-badge.label6 {
-  background: #5eead4;
-  color: #134e4a;
+  background: var(--label6-bg);
+  color: var(--label6-text);
 }
 .label-button.label6:hover,
 .label-button.label6.label-button--active {
-  background: #2dd4bf;
-  border-color: #2dd4bf;
+  background: var(--label6-hover);
+  border-color: var(--label6-border);
 }
 
 .label-button.label7,
 .term-item__label.label7,
 .annotation-item__label.label7,
 .inline-label-badge.label7 {
-  background: #fdba74;
-  color: #7c2d12;
+  background: var(--label7-bg);
+  color: var(--label7-text);
 }
 .label-button.label7:hover,
 .label-button.label7.label-button--active {
-  background: #fb923c;
-  border-color: #fb923c;
+  background: var(--label7-hover);
+  border-color: var(--label7-border);
 }
 
 .label-button.label8,
 .term-item__label.label8,
 .annotation-item__label.label8,
 .inline-label-badge.label8 {
-  background: #c4b5fd;
-  color: #4c1d95;
+  background: var(--label8-bg);
+  color: var(--label8-text);
 }
 .label-button.label8:hover,
 .label-button.label8.label-button--active {
-  background: #a78bfa;
-  border-color: #c084fc;
+  background: var(--label8-hover);
+  border-color: var(--label8-border);
 }
 
 .label-button.label9,
 .term-item__label.label9,
 .annotation-item__label.label9,
 .inline-label-badge.label9 {
-  background: #94a3b8;
-  color: #1e293b;
+  background: var(--label9-bg);
+  color: var(--label9-text);
 }
 .label-button.label9:hover,
 .label-button.label9.label-button--active {
-  background: #64748b;
-  border-color: #64748b;
+  background: var(--label9-hover);
+  border-color: var(--label9-border);
 }
 
 .label-section__empty {
