@@ -148,6 +148,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+.statSub {
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--color-text-muted, #718096);
+}
+
 .perLabelTable {
   width: 100%;
   border-collapse: collapse;

@@ -28,8 +28,20 @@
   color: #d97706;
 }
 
+.stat-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .stat-card__label {
   font-size: 12px;
   color: #6b7280;
   font-weight: 500;
+}
+
+.stat-card__subtext {
+  font-size: 11px;
+  color: #9ca3af;
+  font-weight: 400;
 }

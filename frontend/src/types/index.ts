@@ -597,6 +597,10 @@ export interface ModelDetailResponse {
     record_count?: number;
     term_count?: number;
     label_distribution?: { [label: string]: number };
+    // Reviewed subset that actually trained (absent on older snapshots).
+    reviewed_record_count?: number;
+    reviewed_term_count?: number;
+    reviewed_label_distribution?: { [label: string]: number };
     total_steps?: number;
     val_ratio?: number;
   } | null;
@@ -607,7 +611,12 @@ export interface ModelDetailResponse {
 
 /** Dataset statistics used by the monitoring dashboard. */
 export interface MonitorDatasetStats {
+  // Totals over the whole dataset(s).
   totalRecords: number;
   totalTerms: number;
   labelDistribution: { [label: string]: number };
+  // Reviewed, training-eligible subset (only reviewed records train/evaluate).
+  reviewedRecords: number;
+  reviewedTerms: number;
+  reviewedLabelDistribution: { [label: string]: number };
 }
