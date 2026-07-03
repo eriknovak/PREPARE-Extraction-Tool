@@ -865,6 +865,44 @@ def test_active_run_returns_inflight_progress(client):
     assert body["current_epoch"] == 1
     assert len(body["metrics"]) == 2
     assert body["metrics"][0]["step"] == 10
+    # Steps have been recorded, so the run is past the pre-training gap.
+    assert body["phase"] == "training"
+
+
+def test_active_run_derives_pretraining_phase(client):
+    """The active-run endpoint derives the live pre-training phase from persisted
+    state so the Monitor stepper can rehydrate mid-gap (before the first step)."""
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_ids=[client.dataset_id],
+        base_model="urchade/gliner_small-v2.1",
+        labels=["Drug"],
+        val_ratio=0.1,
+    )
+    training_service.mark_running(db, run.id)
+
+    def current_phase():
+        resp = client.get("/api/v1/bioner/runs/active")
+        assert resp.status_code == 200
+        return resp.json()["phase"]
+
+    # Nothing recorded yet: model is loading and data is being prepared.
+    assert current_phase() == "loading"
+
+    # training_start recorded total_steps → baseline evaluation is running.
+    training_service.set_total_steps(db, run.id, 200)
+    assert current_phase() == "baseline"
+
+    # baseline evaluation stored → trainer is initializing.
+    training_service.record_baseline_evaluation(db, run.id, {"Drug": {"exact_f1": 0.4}})
+    assert current_phase() == "init"
+
+    # first training step emitted → training.
+    training_service.add_step_metric(db, run.id, step=1, epoch=1, loss=0.5)
+    assert current_phase() == "training"
 
 
 def test_active_run_hidden_from_other_user(client):
