@@ -2,11 +2,33 @@
 
 React 19 + Vite SPA for the extract → cluster → map workflow. See root `CLAUDE.md` for the cross-service picture.
 
+<!-- docs:start -->
+## Documentation
+
+Human + agent docs live in [`docs/`](./docs/README.md) — read these before deep work:
+
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) — system map + validated Mermaid diagram
+- [docs/setup-and-run.md](./docs/setup-and-run.md) — env vars, commands, test projects
+- [docs/workflow.md](./docs/workflow.md) — the extract → cluster → map workflow across pages
+- [docs/background/](./docs/background/) — deep dives: [api-layer](./docs/background/api-layer.md), [state-and-hooks](./docs/background/state-and-hooks.md), [routing-and-auth](./docs/background/routing-and-auth.md)
+- [docs/components.md](./docs/components.md) · [docs/deploy.md](./docs/deploy.md)
+
+Stack conventions: [.claude/project-rules/react-vite.md](./.claude/project-rules/react-vite.md).
+@.claude/project-rules/react-vite.md
+<!-- docs:end -->
+
 ## Stack
 
 React 19 · Vite 7 · TypeScript 5.8 (strict) · React Router 7 · Vitest 3 · Storybook 9 · ESLint 9 (flat) ·
 Prettier. UI: @dnd-kit (drag-drop clustering), Recharts, FontAwesome, date-fns, classnames. CSS Modules.
 Package manager: **npm** (`package-lock.json`).
+
+## Design & styling
+
+**`DESIGN.md` is the authority for all UI styling — read it before writing or editing CSS.** Design
+tokens (color, spacing, radius, type) live in `src/index.css`; reference `var(--…)`, never raw hex.
+Classes follow BEM (`block__element--modifier`); one `styles.module.css` per component. Label-category
+colors use the deterministic `label1`–`label9` ramp (see DESIGN.md §8).
 
 ## Commands
 
@@ -57,7 +79,6 @@ npm run build-storybook
 ## Gotchas
 
 - JWT access + refresh tokens in localStorage; failed refresh → logout + redirect to `/login`.
-- Label colors are deterministic: `labels.indexOf(label) % 9 + 1` → `label1`–`label9` CSS classes.
 - Stories live next to components; `npm run test` runs them in a real browser via Playwright — needs
   browsers installed for the storybook project.
 - Production API host: relative `/api/v1` by default; override with `VITE_BACKEND_HOST` if needed.
