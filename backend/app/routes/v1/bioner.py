@@ -1,3 +1,4 @@
+import os
 import requests
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -32,6 +33,8 @@ from app.routes.v1.auth import get_current_user
 from app.schemas import (
     ActiveModelResponse,
     ActiveTrainingRunResponse,
+    DefaultModelInfo,
+    DiscoveredModelSummary,
     ExtractionJobStartResponse,
     ExtractionJobStatusResponse,
     FullStatsRequest,
@@ -42,6 +45,7 @@ from app.schemas import (
     ModelDetailResponse,
     ModelSummary,
     ModelsOutput,
+    RescanModelsResponse,
     RunErrorAnalysisResponse,
     RunEvaluationResponse,
     SetActiveModelRequest,
@@ -608,6 +612,8 @@ def _model_summary(db: Session, model: Model) -> ModelSummary:
         dataset_id=model.dataset_id,
         created_at=model.created_at,
         score=score,
+        source=model.source,
+        engine=model.engine,
     )
 
 
@@ -672,6 +678,71 @@ def list_models(
         summary.is_active = m.id == active_model_id
         summaries.append(summary)
     return ModelsOutput(models=summaries)
+
+
+def _default_model_info(default_model, current_engine) -> Optional[DefaultModelInfo]:
+    """Build the launch-default descriptor from bioner's raw --model string.
+
+    Local paths are shown as their folder name; HuggingFace ids are shown whole.
+    """
+    if not default_model:
+        return None
+    name = (
+        os.path.basename(default_model.rstrip("/"))
+        if default_model.startswith("/")
+        else default_model
+    )
+    return DefaultModelInfo(name=name, engine=current_engine)
+
+
+@router.post("/models/rescan", response_model=RescanModelsResponse)
+def rescan_models(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Scan bioner's models dir, reconcile the DB, and return the enriched list.
+
+    This is the ONLY write path for model discovery. On a bioner scan failure it
+    is a safe no-op (see ``training_service.discover_models``) and returns the
+    current DB list with ``current_engine=None`` (nothing activatable).
+    """
+    meta = training_service.discover_models(db)
+    current_engine = meta["current_engine"]
+    scan_by_path = meta["scan_by_path"]
+
+    active_model_id = training_service.get_app_settings(db).active_model_id
+    models = db.exec(
+        select(Model)
+        .where(Model.path.is_not(None))
+        .where(Model.name != training_service.BASELINE_MODEL_NAME)
+        .order_by(Model.created_at.desc())
+    ).all()
+
+    summaries = []
+    for m in models:
+        base = _model_summary(db, m)
+        scanned = scan_by_path.get(m.path.rstrip("/")) if m.path else None
+        is_adapter = bool(scanned["is_adapter"]) if scanned else False
+        engine = scanned["engine"] if scanned else m.engine
+        activatable = (
+            current_engine is not None and engine == current_engine and not is_adapter
+        )
+        summaries.append(
+            DiscoveredModelSummary(
+                **base.model_dump(),
+                is_adapter=is_adapter,
+                activatable=activatable,
+            )
+        )
+        summaries[-1].engine = engine
+        summaries[-1].run_id = m.training_run.id if m.training_run else None
+        summaries[-1].is_active = m.id == active_model_id
+
+    return RescanModelsResponse(
+        models=summaries,
+        current_engine=current_engine,
+        default_model=_default_model_info(meta["default_model"], current_engine),
+    )
 
 
 @router.get("/models/{model_id}/detail", response_model=ModelDetailResponse)

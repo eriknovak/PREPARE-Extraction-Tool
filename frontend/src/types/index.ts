@@ -500,6 +500,32 @@ export interface ModelSummary {
   score?: number | null;
   run_id?: number | null;
   is_active?: boolean;
+  /** Provenance: "trained" | "discovered" | "baseline". */
+  source?: string | null;
+  /** Backing engine: "gliner" | "huggingface". */
+  engine?: string | null;
+}
+
+/** A model enriched with live bioner scan info (from the rescan endpoint). */
+export interface DiscoveredModelSummary extends ModelSummary {
+  /** A LoRA/PEFT adapter — needs a base model, not directly selectable. */
+  is_adapter: boolean;
+  /** Can this model be activated in the running bioner process
+   *  (engine matches the launch engine and it is not an adapter)? */
+  activatable: boolean;
+}
+
+/** bioner's launch default model (what /ner runs when nothing is selected). */
+export interface DefaultModelInfo {
+  name: string;
+  engine?: string | null;
+}
+
+/** Reconciled model list plus live bioner engine/default context. */
+export interface RescanModelsResponse {
+  models: DiscoveredModelSummary[];
+  current_engine?: string | null;
+  default_model?: DefaultModelInfo | null;
 }
 
 /** List of trained models available for selection. */

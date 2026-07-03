@@ -25,6 +25,21 @@ def get_training_status(run_id: int) -> Optional[dict]:
     return resp.json()
 
 
+def get_available_models() -> dict:
+    """Return bioner's scan of local model directories + launch engine/default.
+
+    Shape: ``{current_engine, default_model, models_dir, models: [...]}``. Raises
+    ``requests.RequestException`` if bioner is unreachable — callers treat that as
+    "unknown" and must not mutate DB state on failure.
+    """
+    resp = requests.get(
+        f"{settings.EXTRACT_HOST}/models/available",
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
 def start_training(payload: dict):
     response = requests.post(
         f"{settings.EXTRACT_HOST}/training/start",

@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import classNames from "classnames";
 
+import { getModels } from "@api/monitoring";
 import Button from "@components/Button";
 import Card from "@components/Card";
 import ProgressBar from "@components/ProgressBar";
 import Select from "@components/Select";
 import StatCard from "@components/StatCard";
+import type { ModelSummary } from "types";
 
 import LabelSelector from "../LabelSelector";
 import TrainingLossChart from "../charts/TrainingLossChart";
@@ -43,10 +45,7 @@ const GLINER_BASELINES = [
 // Compact one-line label for the dropdown: "Multilingual (default) · 289M · ~8 GB VRAM".
 const formatBaselineLabel = (b: (typeof GLINER_BASELINES)[number]) => `${b.label} · ${b.params} · ~${b.vramGB} GB VRAM`;
 
-const BASELINE_SELECT_OPTIONS = [
-  ...GLINER_BASELINES.map((b) => ({ value: b.value, label: formatBaselineLabel(b) })),
-  { value: "custom", label: "Custom…" },
-];
+const HF_BASELINE_OPTIONS = GLINER_BASELINES.map((b) => ({ value: b.value, label: formatBaselineLabel(b) }));
 
 const VRAM_TOOLTIP =
   "Approximate peak GPU VRAM to fine-tune at the default batch size (8). Actual usage varies with batch size and sequence length.";
@@ -118,6 +117,24 @@ const TrainingView = () => {
   const inPreTraining = trainingPhase != null && trainingPhase !== "training";
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Locally-available GLiNER models (discovered + trained) usable as a base
+  // model. Only gliner-engine local folders are valid GLiNER training bases.
+  const [localModels, setLocalModels] = useState<ModelSummary[]>([]);
+  useEffect(() => {
+    getModels()
+      .then((list) => setLocalModels(list.filter((m) => m.engine === "gliner" && m.path)))
+      .catch(() => setLocalModels([]));
+  }, []);
+
+  const baseModelOptions = useMemo(
+    () => [
+      ...localModels.map((m) => ({ value: m.path as string, label: `${m.name} · local` })),
+      ...HF_BASELINE_OPTIONS,
+      { value: "custom", label: "Custom…" },
+    ],
+    [localModels]
+  );
 
   const selectedBaseline = GLINER_BASELINES.find((b) => b.value === baseModel);
 
@@ -216,7 +233,7 @@ const TrainingView = () => {
                 setBaseModel(v);
               }
             }}
-            options={BASELINE_SELECT_OPTIONS}
+            options={baseModelOptions}
             fullWidth={false}
           />
 

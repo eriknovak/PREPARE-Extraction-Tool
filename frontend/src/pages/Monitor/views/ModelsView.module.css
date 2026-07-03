@@ -5,6 +5,36 @@
   align-items: start;
 }
 
+.leftCol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.engineNote {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #718096);
+  text-transform: capitalize;
+}
+
+.badge {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 0.05rem 0.35rem;
+  border-radius: 0.25rem;
+  background: var(--color-surface-hover, #edf2f7);
+  color: var(--color-text-muted, #718096);
+  white-space: nowrap;
+}
+
 .list {
   list-style: none;
   margin: 0;

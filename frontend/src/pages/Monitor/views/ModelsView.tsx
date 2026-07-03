@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faCheck, faPen, faTrash, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faCheck, faPen, faRotate, faTrash, faXmark } from "@fortawesome/free-solid-svg-icons";
 
-import { deleteRun, getModelDetail, getModels, getRunMetrics, setActiveModel, updateRun } from "@api/monitoring";
+import { deleteRun, getModelDetail, getRunMetrics, rescanModels, setActiveModel, updateRun } from "@api/monitoring";
 import Button from "@components/Button";
 import Card from "@components/Card";
 import { ConfirmDialog } from "@components/ConfirmDialog";
 import { BarChart, ChartState, LineChart } from "@components/charts";
-import type { ModelDetailResponse, ModelSummary, TrainingMetric } from "types";
+import type { DefaultModelInfo, DiscoveredModelSummary, ModelDetailResponse, TrainingMetric } from "types";
 
 import { buildLossSeries, formatEpoch, formatLoss } from "../chartData";
 import { useMonitor } from "../hooks/useMonitor";
@@ -20,11 +20,24 @@ import styles from "./ModelsView.module.css";
 
 const CHART_HEIGHT = 280;
 
-const DEFAULT_ROW: ModelSummary = {
+/** Synthetic row (id -1) for bioner's launch-default model — always selectable
+ *  (activating it reverts bioner to the model it started with). */
+const buildDefaultRow = (defaultModel: DefaultModelInfo | null): DiscoveredModelSummary => ({
   id: -1,
-  name: "Default (bioner)",
-  version: "default",
+  name: defaultModel ? `${defaultModel.name} (launch default)` : "Default (bioner)",
+  version: defaultModel?.engine ?? "default",
+  source: "baseline",
+  engine: defaultModel?.engine ?? null,
+  is_adapter: false,
+  activatable: true,
   is_active: false,
+});
+
+/** Tooltip for the "Use" action, explaining why a model can't be activated. */
+const activationTooltip = (m: DiscoveredModelSummary, currentEngine: string | null): string => {
+  if (m.id < 0 || m.activatable) return "Use this model for extraction";
+  if (m.is_adapter) return "LoRA adapter — needs a base model; not directly selectable";
+  return `bioner is running the ${currentEngine ?? "?"} engine; restart with BIONER_ENGINE=${m.engine ?? "?"} to use this model`;
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -219,12 +232,15 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
 const ModelsView = () => {
   const { toast } = useMonitor();
 
-  const [models, setModels] = useState<ModelSummary[]>([]);
+  const [models, setModels] = useState<DiscoveredModelSummary[]>([]);
+  const [defaultModel, setDefaultModel] = useState<DefaultModelInfo | null>(null);
+  const [currentEngine, setCurrentEngine] = useState<string | null>(null);
   const [activeModelId, setActiveModelId] = useState<number | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ModelDetailResponse | null>(null);
   const [metrics, setMetrics] = useState<TrainingMetric[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
 
   // Rename state
   const [renameId, setRenameId] = useState<number | null>(null);
@@ -232,24 +248,38 @@ const ModelsView = () => {
   const renameInputRef = useRef<HTMLInputElement>(null);
 
   // Delete confirm
-  const [deleteTarget, setDeleteTarget] = useState<ModelSummary | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DiscoveredModelSummary | null>(null);
 
-  // ── Load model list ──
+  // ── Load model list (lazy live scan + reconcile) ──
   const reloadModels = useCallback(async () => {
-    const list = await getModels();
-    setModels(list);
-    const active = list.find((m) => m.is_active);
-    setActiveModelId(active ? active.id : null); // null => Default is active
+    const res = await rescanModels();
+    setModels(res.models);
+    setDefaultModel(res.default_model ?? null);
+    setCurrentEngine(res.current_engine ?? null);
+    const active = res.models.find((m) => m.is_active);
+    setActiveModelId(active ? active.id : null); // null => launch default is active
   }, []);
 
   useEffect(() => {
     reloadModels().catch(() => toast.showToast("Failed to load models", "error"));
   }, [reloadModels, toast]);
 
+  const handleRescan = useCallback(async () => {
+    setRescanning(true);
+    try {
+      await reloadModels();
+      toast.showToast("Models rescanned", "success");
+    } catch {
+      toast.showToast("Failed to rescan models", "error");
+    } finally {
+      setRescanning(false);
+    }
+  }, [reloadModels, toast]);
+
   // Default row shows active when no trained model is active.
-  const rows = useMemo<ModelSummary[]>(
-    () => [{ ...DEFAULT_ROW, is_active: activeModelId === null }, ...models],
-    [models, activeModelId]
+  const rows = useMemo<DiscoveredModelSummary[]>(
+    () => [{ ...buildDefaultRow(defaultModel), is_active: activeModelId === null }, ...models],
+    [models, defaultModel, activeModelId]
   );
 
   // ── Load detail for selected row ──
@@ -289,7 +319,7 @@ const ModelsView = () => {
 
   // ── Handlers ──
   const handleUse = useCallback(
-    async (model: ModelSummary) => {
+    async (model: DiscoveredModelSummary) => {
       try {
         const next = model.id < 0 ? null : model.id;
         await setActiveModel(next);
@@ -308,7 +338,7 @@ const ModelsView = () => {
     [reloadModels, toast]
   );
 
-  const handleRenameStart = useCallback((model: ModelSummary) => {
+  const handleRenameStart = useCallback((model: DiscoveredModelSummary) => {
     setRenameId(model.id);
     setRenameDraft(model.name);
     // focus the input on next tick
@@ -316,7 +346,7 @@ const ModelsView = () => {
   }, []);
 
   const handleRenameConfirm = useCallback(
-    async (model: ModelSummary) => {
+    async (model: DiscoveredModelSummary) => {
       const trimmed = renameDraft.trim();
       if (!trimmed) {
         setRenameId(null);
@@ -355,101 +385,117 @@ const ModelsView = () => {
 
   return (
     <div className={styles.layout}>
-      {/* ── Model list ── */}
-      <ul className={styles.list} role="listbox" aria-label="Trained models">
-        {rows.map((m) => {
-          const isRenaming = renameId === m.id;
-          const isReal = m.id >= 0;
+      {/* ── Model list column ── */}
+      <div className={styles.leftCol}>
+        <div className={styles.toolbar}>
+          {currentEngine && <span className={styles.engineNote}>Engine: {currentEngine}</span>}
+          <Button
+            size="small"
+            variant="outline"
+            title="Rescan the models folder for available models"
+            onClick={handleRescan}
+            disabled={rescanning}
+          >
+            <FontAwesomeIcon icon={faRotate} spin={rescanning} /> Rescan models
+          </Button>
+        </div>
+        <ul className={styles.list} role="listbox" aria-label="Trained models">
+          {rows.map((m) => {
+            const isRenaming = renameId === m.id;
+            const isReal = m.id >= 0;
 
-          return (
-            <li key={m.id} className={styles.listItem}>
-              {isRenaming ? (
-                <>
-                  <input
-                    ref={renameInputRef}
-                    className={styles.renameInput}
-                    value={renameDraft}
-                    onChange={(e) => setRenameDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handleRenameConfirm(m);
-                      if (e.key === "Escape") setRenameId(null);
-                    }}
-                    aria-label="Rename model"
-                  />
-                  <div className={styles.actions}>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      title="Confirm rename"
-                      aria-label="Confirm rename"
-                      onClick={() => handleRenameConfirm(m)}
+            return (
+              <li key={m.id} className={styles.listItem}>
+                {isRenaming ? (
+                  <>
+                    <input
+                      ref={renameInputRef}
+                      className={styles.renameInput}
+                      value={renameDraft}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") handleRenameConfirm(m);
+                        if (e.key === "Escape") setRenameId(null);
+                      }}
+                      aria-label="Rename model"
+                    />
+                    <div className={styles.actions}>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="Confirm rename"
+                        aria-label="Confirm rename"
+                        onClick={() => handleRenameConfirm(m)}
+                      >
+                        <FontAwesomeIcon icon={faCheck} />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        title="Cancel rename"
+                        aria-label="Cancel rename"
+                        onClick={() => setRenameId(null)}
+                      >
+                        <FontAwesomeIcon icon={faXmark} />
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className={styles.row}
+                      role="option"
+                      aria-selected={selectedId === m.id}
+                      onClick={() => setSelectedId(m.id)}
                     >
-                      <FontAwesomeIcon icon={faCheck} />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      title="Cancel rename"
-                      aria-label="Cancel rename"
-                      onClick={() => setRenameId(null)}
-                    >
-                      <FontAwesomeIcon icon={faXmark} />
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className={styles.row}
-                    role="option"
-                    aria-selected={selectedId === m.id}
-                    onClick={() => setSelectedId(m.id)}
-                  >
-                    <span className={styles.name}>{m.name}</span>
-                    {m.score != null && <span className={styles.score}>{(m.score * 100).toFixed(1)}%</span>}
-                    {m.is_active && <span className={styles.active}>● active</span>}
-                  </button>
+                      <span className={styles.name}>{m.name}</span>
+                      {m.source && <span className={styles.badge}>{m.source}</span>}
+                      {m.score != null && <span className={styles.score}>{(m.score * 100).toFixed(1)}%</span>}
+                      {m.is_active && <span className={styles.active}>● active</span>}
+                    </button>
 
-                  <div className={styles.actions}>
-                    <Button
-                      size="small"
-                      variant={m.is_active ? "primary" : "outline"}
-                      title="Use this model for extraction"
-                      onClick={() => handleUse(m)}
-                    >
-                      Use
-                    </Button>
-                    {isReal && (
-                      <>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          title="Rename model"
-                          aria-label="Rename model"
-                          onClick={() => handleRenameStart(m)}
-                        >
-                          <FontAwesomeIcon icon={faPen} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          colorScheme="danger"
-                          title="Delete model"
-                          aria-label="Delete model"
-                          onClick={() => setDeleteTarget(m)}
-                        >
-                          <FontAwesomeIcon icon={faTrash} />
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                    <div className={styles.actions}>
+                      <Button
+                        size="small"
+                        variant={m.is_active ? "primary" : "outline"}
+                        title={activationTooltip(m, currentEngine)}
+                        disabled={m.id >= 0 && !m.activatable}
+                        onClick={() => handleUse(m)}
+                      >
+                        Use
+                      </Button>
+                      {isReal && (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title="Rename model"
+                            aria-label="Rename model"
+                            onClick={() => handleRenameStart(m)}
+                          >
+                            <FontAwesomeIcon icon={faPen} />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            colorScheme="danger"
+                            title="Delete model"
+                            aria-label="Delete model"
+                            onClick={() => setDeleteTarget(m)}
+                          >
+                            <FontAwesomeIcon icon={faTrash} />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       {/* ── Detail pane ── */}
       <section className={styles.detail}>

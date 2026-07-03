@@ -6,6 +6,7 @@ the in-memory engine is hot-swapped by the inference worker on its next request
 """
 
 import logging
+import os
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
@@ -17,14 +18,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Model"])
 
 # Wired from main() once the server is built: lets the route validate against,
-# and keep in sync, the same metadata that ``/model/info`` reports.
-_context: dict = {"server": None, "default_model": None}
+# and keep in sync, the same metadata that ``/model/info`` reports. ``engine`` is
+# the launch engine (fixed for the process life) — model discovery is engine-aware.
+_context: dict = {"server": None, "default_model": None, "engine": None}
 
 
-def register_model_context(server, default_model: str) -> None:
-    """Wire the LitServer and the default model path into the activate route."""
+def register_model_context(
+    server, default_model: str, engine: str | None = None
+) -> None:
+    """Wire the LitServer, default model path, and launch engine into the routes."""
     _context["server"] = server
     _context["default_model"] = default_model
+    _context["engine"] = engine
 
 
 class ActivateModelRequest(BaseModel):
@@ -64,5 +69,25 @@ def activate_model(request: ActivateModelRequest):
         server.model_metadata = metadata
 
     is_default = target == default_model
-    logger.info("Requested activation of NER model '%s' (default=%s)", target, is_default)
+    logger.info(
+        "Requested activation of NER model '%s' (default=%s)", target, is_default
+    )
     return {"model": metadata, "active_model": target, "is_default": is_default}
+
+
+@router.get("/models/available")
+def list_available_models():
+    """List local model directories under ``BIONER_MODELS_DIR`` with engine info.
+
+    Engine detection is marker-based (see ``model_manager.detect_engine``). The
+    launch ``current_engine`` and ``default_model`` are reported so the caller can
+    tell which discovered models this process can actually activate (the engine is
+    fixed at launch and cannot be hot-swapped across engine types).
+    """
+    models_dir = os.environ.get("BIONER_MODELS_DIR", "/models")
+    return {
+        "current_engine": _context["engine"],
+        "default_model": _context["default_model"],
+        "models_dir": models_dir,
+        "models": model_manager.scan_models(models_dir),
+    }
