@@ -208,6 +208,24 @@ export interface ExtractionJobStatusResponse {
   error_message?: string | null;
 }
 
+export interface ClusterJobStartResponse {
+  job_id: string;
+  dataset_id: number;
+  total: number;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+}
+
+export interface ClusterJobStatusResponse {
+  job_id: string;
+  dataset_id: number;
+  total: number;
+  completed: number;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  clustered_labels: string[];
+  skipped_labels: string[];
+  error_message?: string | null;
+}
+
 export interface DatasetOverview {
   dataset: Dataset;
   stats: DatasetStats;

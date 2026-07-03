@@ -75,6 +75,28 @@ class ExtractionJobStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+class ClusterJobStartResponse(BaseModel):
+    """Response when a dataset "cluster all labels" job is queued."""
+
+    job_id: int
+    dataset_id: int
+    total: int
+    status: str
+
+
+class ClusterJobStatusResponse(BaseModel):
+    """Progress snapshot for a dataset cluster-all job (progress unit = labels)."""
+
+    job_id: int
+    dataset_id: int
+    total: int
+    completed: int
+    status: str
+    clustered_labels: List[str] = []
+    skipped_labels: List[str] = []
+    error_message: Optional[str] = None
+
+
 # ================================================
 # Pagination models
 # ================================================

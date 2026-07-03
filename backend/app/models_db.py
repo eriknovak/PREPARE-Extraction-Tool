@@ -536,6 +536,42 @@ class MappingJob(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class ClusterJob(SQLModel, table=True):
+    """
+    Tracks progress for dataset-wide "cluster all labels" runs.
+
+    Keyed on the dataset (no model). Progress is measured in labels: ``total`` is
+    the number of labels in the dataset and ``completed`` increments once per
+    label processed. ``clustered_labels``/``skipped_labels`` record the per-label
+    outcome so the UI can report which labels were (re)clustered and which were
+    skipped because they already had a reviewed cluster.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    dataset_id: int = Field(
+        foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    total: int = Field(default=0)
+    completed: int = Field(default=0)
+    status: str = Field(
+        default="pending", index=True
+    )  # pending|running|completed|failed|cancelled
+    error_message: Optional[str] = Field(default=None)
+
+    clustered_labels: List[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False)
+    )
+    skipped_labels: List[str] = Field(
+        default_factory=list, sa_column=Column(JSON, nullable=False)
+    )
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    currently_used: bool = Field(default=True)  # only one True
+
+
 class Vocabulary(SQLModel, table=True):
     """
     Vocabulary model representing a standardized terminology system.
