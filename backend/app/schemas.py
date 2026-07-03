@@ -835,6 +835,10 @@ class ActiveTrainingRunResponse(BaseModel):
     num_epochs: Optional[int] = None
     current_epoch: Optional[int] = None
     metrics: List[TrainingMetricPoint] = Field(default_factory=list)
+    # Derived pre-training phase for the Monitor stepper (one of "loading",
+    # "baseline", "init", "training"), or None when no run is in flight. Lets the
+    # stepper rehydrate mid-gap, before the first training step emits a metric.
+    phase: Optional[str] = None
 
 
 class FullStatsRequest(BaseModel):

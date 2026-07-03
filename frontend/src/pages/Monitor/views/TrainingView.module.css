@@ -142,6 +142,72 @@
   color: var(--color-success);
 }
 
+/* ------------------ PHASE STEPPER ------------------ */
+
+.stepper {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.step:not(:last-child)::after {
+  content: "▸";
+  margin-left: var(--space-1);
+  color: var(--color-text-muted);
+}
+
+.step__marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.step--active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.step--active .step__marker {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+}
+
+.step--done {
+  color: var(--color-success);
+}
+
+.step--done .step__marker {
+  border-color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 12%, transparent);
+  color: var(--color-success);
+}
+
+.phaseCaption {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
 /* ------------------ PROGRESS ------------------ */
 
 .progress {

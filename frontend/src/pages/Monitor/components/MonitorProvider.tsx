@@ -92,6 +92,9 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const [trainingMetrics, setTrainingMetrics] = useState<TrainingMetric[]>([]);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingStatus, setTrainingStatus] = useState<string>("");
+  // Live pre-training phase, derived from the WS event stream (and rehydrated
+  // from the active-run endpoint on mount). Null while no run is in flight.
+  const [trainingPhase, setTrainingPhase] = useState<string | null>(null);
 
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
 
@@ -181,6 +184,8 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           setProgress(0);
           setCurrentStep(0);
           setTrainingStatus("Training started…");
+          // Model is loaded; baseline evaluation runs next (the dominant CPU stall).
+          setTrainingPhase("baseline");
 
           totalEpochsRef.current = data.num_epochs ?? 4;
           setTotalEpochs(data.num_epochs ?? 4);
@@ -191,6 +196,13 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
         case "training_info":
           setIsTraining(true);
           setTrainingStatus(`Training started (${data.train_size} samples)`);
+          // First event of the run: model is loading and data is being prepared.
+          setTrainingPhase("loading");
+          break;
+
+        case "baseline_evaluation_completed":
+          // Baseline eval done; the trainer is initializing before step 1.
+          setTrainingPhase("init");
           break;
 
         case "epoch_update": {
@@ -220,6 +232,8 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
           if (step != null) {
             setCurrentStep(step);
+            // First real training step: pre-training phases are over.
+            if (step > 0) setTrainingPhase("training");
             const total = totalStepsRef.current;
             if (total > 0) {
               setProgress(Math.min(100, Math.round((step / total) * 100)));
@@ -235,6 +249,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           setTrainingStatus(`Completed — saved to ${data.output_path ?? "unknown"}`);
           setCurrentStep(0);
           setTotalSteps(0);
+          setTrainingPhase(null);
           break;
 
         case "stopped":
@@ -243,6 +258,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           setProgress(0);
           setCurrentStep(0);
           setTotalSteps(0);
+          setTrainingPhase(null);
           break;
 
         case "error":
@@ -250,6 +266,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           setTrainingStatus(`Error: ${data.message}`);
           setCurrentStep(0);
           setTotalSteps(0);
+          setTrainingPhase(null);
           showAlert({ message: data.message, suggestion: data.suggestion }, "error");
           break;
       }
@@ -317,11 +334,17 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
     getActiveRun()
       .then((run) => {
-        if (cancelled || !run) return;
+        if (cancelled) return;
+        if (!run) {
+          // No run in flight — clear any stale phase from a prior run.
+          setTrainingPhase(null);
+          return;
+        }
 
         setActiveRunId(run.run_id);
         setIsTraining(true);
         setTrainingStatus("Training in progress…");
+        setTrainingPhase(run.phase ?? null);
         // Drives the stats card + progress region without a manual reselect.
         setTrainingDatasetIds(run.dataset_ids);
 
@@ -407,6 +430,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     totalSteps,
     trainingMetrics,
     trainingStatus,
+    trainingPhase,
 
     trainingDatasetIds,
     setTrainingDatasetIds,

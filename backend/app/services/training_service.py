@@ -7,6 +7,7 @@ from sqlmodel import Session, func, select
 
 from app.models_db import (
     AppSettings,
+    Evaluation,
     Model,
     ModelTrainRecordLink,
     TrainingMetric,
@@ -484,6 +485,58 @@ def get_current_step(db: Session, run_id: int) -> Optional[int]:
     return db.exec(
         select(func.max(TrainingMetric.step)).where(TrainingMetric.run_id == run_id)
     ).one()
+
+
+def has_baseline_evaluation(db: Session, run: TrainingRun) -> bool:
+    """Return True once the run's dataset has a stored baseline evaluation.
+
+    The baseline (untrained base model) evaluation is written when the trainer
+    emits ``baseline_evaluation_completed`` — its presence marks the transition
+    out of the baseline-evaluation phase into trainer initialization. Used to
+    derive the live pre-training phase for Monitor rehydration.
+
+    Args:
+        db (Session): Active DB session.
+        run (TrainingRun): The run whose dataset baseline to check.
+
+    Returns:
+        bool: Whether a baseline evaluation exists for the run's dataset.
+    """
+    model = get_baseline_model(db, run.dataset_id)
+    if model is None:
+        return False
+    row = db.exec(select(Evaluation.id).where(Evaluation.model_id == model.id)).first()
+    return row is not None
+
+
+def derive_training_phase(
+    db: Session, run: TrainingRun, current_step: Optional[int]
+) -> Optional[str]:
+    """Derive a run's live pre-training phase from already-persisted signals.
+
+    Mirrors the frontend's event-driven phase mapping so the Monitor stepper can
+    rehydrate mid-gap — after navigating away and back before the first training
+    step emits a metric. Returns one of ``"loading"``, ``"baseline"``, ``"init"``
+    or ``"training"`` while the run is in flight, else None.
+
+    Args:
+        db (Session): Active DB session.
+        run (TrainingRun): The run to derive the phase for.
+        current_step (Optional[int]): Highest recorded metric step, if any.
+
+    Returns:
+        Optional[str]: The derived phase, or None when no run is in flight.
+    """
+    if run.status not in ("pending", "running"):
+        return None
+    if current_step is not None and current_step > 0:
+        return "training"
+    if has_baseline_evaluation(db, run):
+        return "init"
+    stats = run.train_stats or {}
+    if stats.get("total_steps") is not None:
+        return "baseline"
+    return "loading"
 
 
 def update_run(

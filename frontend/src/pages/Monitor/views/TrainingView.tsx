@@ -58,6 +58,21 @@ const SPLIT_OPTIONS = [
   { value: "0.3", label: "70 / 30" },
 ];
 
+// Pre-training → training phases surfaced in the progress stepper, in order.
+// The `phase` values match the backend derivation and the MonitorProvider WS
+// mapping ("loading" → "baseline" → "init" → "training").
+const PHASE_STEPS = [
+  { phase: "loading", short: "Load", label: "Loading model & preparing data" },
+  { phase: "baseline", short: "Baseline", label: "Evaluating baseline model" },
+  { phase: "init", short: "Init", label: "Initializing trainer" },
+  { phase: "training", short: "Train", label: "Training" },
+] as const;
+
+// Copy for the amber notice shown while the run is in a pre-training phase.
+const PRE_TRAINING_NOTICE =
+  "Pre-training steps (model loading, baseline evaluation, trainer setup) can take 1–2 minutes on CPU. " +
+  "This is normal — please don't stop the run.";
+
 /**
  * Training view — trains a new model on one or more selected datasets: dataset
  * pickers (training + optional evaluation), aggregated stats and label
@@ -93,9 +108,14 @@ const TrainingView = () => {
     totalSteps,
     trainingMetrics,
     trainingStatus,
+    trainingPhase,
     startTraining,
     stopTraining,
   } = useMonitor();
+
+  // Index of the active phase in PHASE_STEPS (-1 when no run is in flight).
+  const activePhaseIndex = PHASE_STEPS.findIndex((s) => s.phase === trainingPhase);
+  const inPreTraining = trainingPhase != null && trainingPhase !== "training";
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -325,6 +345,32 @@ const TrainingView = () => {
 
       {/* LIVE TRAINING PROGRESSION */}
       <Card title="Training progress">
+        {activePhaseIndex >= 0 && (
+          <ol className={styles.stepper} aria-label="Training phase">
+            {PHASE_STEPS.map((step, i) => {
+              const state = i < activePhaseIndex ? "done" : i === activePhaseIndex ? "active" : "pending";
+              return (
+                <li
+                  key={step.phase}
+                  className={classNames(styles.step, styles[`step--${state}`])}
+                  aria-current={state === "active" ? "step" : undefined}
+                >
+                  <span className={styles.step__marker}>{state === "done" ? "✓" : i + 1}</span>
+                  {step.short}
+                </li>
+              );
+            })}
+          </ol>
+        )}
+
+        {activePhaseIndex >= 0 && <p className={styles.phaseCaption}>{PHASE_STEPS[activePhaseIndex].label}</p>}
+
+        {inPreTraining && (
+          <p className={classNames(styles.reviewCallout, styles["reviewCallout--warn"])} role="status">
+            {PRE_TRAINING_NOTICE}
+          </p>
+        )}
+
         <div className={styles.progress}>
           <ProgressBar value={progress} />
           {(isTraining || currentStep > 0) && (

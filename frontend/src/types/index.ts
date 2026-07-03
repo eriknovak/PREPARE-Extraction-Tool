@@ -597,6 +597,9 @@ export interface ActiveTrainingRun {
   num_epochs?: number | null;
   current_epoch?: number | null;
   metrics: TrainingMetric[];
+  /** Derived pre-training phase ("loading" | "baseline" | "init" | "training"),
+   *  used to rehydrate the phase stepper mid-gap. Null when no run is in flight. */
+  phase?: string | null;
 }
 
 /** Per-model detail: training datasets, snapshot stats, base-vs-trained eval. */

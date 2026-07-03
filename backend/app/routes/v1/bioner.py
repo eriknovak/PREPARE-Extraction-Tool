@@ -1094,12 +1094,13 @@ def active_run(
     stats = run.train_stats or {}
     steps = [m.step for m in metrics if m.step is not None]
     epochs = [m.epoch for m in metrics if m.epoch is not None]
+    current_step = max(steps) if steps else None
     return ActiveTrainingRunResponse(
         run_id=run.id,
         dataset_ids=train_ids,
         status=run.status,
         total_steps=stats.get("total_steps"),
-        current_step=max(steps) if steps else None,
+        current_step=current_step,
         num_epochs=stats.get("num_epochs"),
         current_epoch=max(epochs) if epochs else None,
         metrics=[
@@ -1108,6 +1109,7 @@ def active_run(
             )
             for m in ordered
         ],
+        phase=training_service.derive_training_phase(db, run, current_step),
     )
 
 
