@@ -23,6 +23,15 @@ from app.library.ner_metrics import NERMetrics
 
 logger = logging.getLogger(__name__)
 
+
+class _TrainingStopped(Exception):
+    """Raised internally when a cooperative stop checkpoint sees the stop event.
+
+    Used to unwind long-running loops (e.g. the eval loop) promptly so the worker
+    can end the run as ``stopped`` rather than running to completion.
+    """
+
+
 # -----------------------------
 # Backend callback config
 # -----------------------------
@@ -254,6 +263,15 @@ class GLiNERFinetuner:
     # -----------------------------
     def request_stop(self) -> None:
         self._stop_event.set()
+
+    def _emit_stopped(self) -> None:
+        """Mark the run terminal-stopped and notify the UI.
+
+        Used by every cooperative-stop unwind path so a stop always both frees
+        the job slot (terminal status) and emits a ``stopped`` event.
+        """
+        self._set_status("stopped")
+        self._emit({"type": "stopped", "run_id": self.run_id})
 
     # -----------------------------
     # STEP MATH HELPERS
@@ -502,6 +520,13 @@ class GLiNERFinetuner:
         evaluation_samples = []
 
         for item in dataset:
+            # Cooperative stop checkpoint: this loop runs predict_entities over
+            # every eval item and can take minutes on CPU. Bail within one item
+            # of a stop request so the run can wind down promptly. Shared by both
+            # baseline and final evaluation.
+            if self._stop_event.is_set():
+                raise _TrainingStopped()
+
             text = item["text"]
 
             predictions = model.predict_entities(
@@ -650,13 +675,7 @@ class GLiNERFinetuner:
         ).to(self.device)
 
         if self._stop_event.is_set():
-            self._set_status("stopped")
-            self._emit(
-                {
-                    "type": "stopped",
-                    "run_id": self.run_id,
-                }
-            )
+            self._emit_stopped()
             return
 
         cleaned_data, cleaned_eval = self._prepare_cleaned_data()
@@ -693,7 +712,11 @@ class GLiNERFinetuner:
         # extraction model (the run's starting weights). Best-effort — it runs
         # inside this background training job and never blocks anything else.
         if not self._stop_event.is_set():
-            self._run_baseline_evaluation(model, val_data, labels)
+            try:
+                self._run_baseline_evaluation(model, val_data, labels)
+            except _TrainingStopped:
+                self._emit_stopped()
+                return
 
         try:
             trainer.train()
@@ -702,18 +725,12 @@ class GLiNERFinetuner:
                 model, val_data, labels, train_data, total, train_pct, val_pct
             )
 
-        except KeyboardInterrupt:
-            self._set_status("stopped")
-            self._emit(
-                {
-                    "type": "stopped",
-                    "run_id": self.run_id,
-                }
-            )
+        except (KeyboardInterrupt, _TrainingStopped):
+            self._emit_stopped()
             return
 
         if self._stop_event.is_set():
-            self._set_status("stopped")
+            self._emit_stopped()
             return
 
         self._save_model(model)
@@ -1057,6 +1074,10 @@ class GLiNERFinetuner:
         """
         try:
             metrics, _ = self.evaluate_model(model, val_data, labels)
+        except _TrainingStopped:
+            # A stop during baseline is not a failure — let the caller end the
+            # run cleanly as ``stopped`` rather than swallowing it here.
+            raise
         except Exception as e:  # noqa: BLE001 - baseline must never break training
             logger.exception(f"[BASELINE EVAL FAILED] run_id={self.run_id} error={e}")
             return

@@ -892,6 +892,27 @@ def set_active_model(
 # ================================================
 
 
+def _bioner_conflict_detail(resp: requests.Response) -> dict:
+    """Extract bioner's 409 conflict ``detail`` for pass-through to the client.
+
+    bioner returns ``{"detail": {"error": "TRAINING_BUSY" | "TRAINING_STOPPING",
+    "message": ..., "suggestion": ...}}``. Forward that structured detail so the
+    frontend can branch on the error code; fall back to a generic busy detail if
+    the body isn't shaped as expected.
+    """
+    try:
+        detail = resp.json().get("detail")
+    except ValueError:
+        detail = None
+    if isinstance(detail, dict) and detail.get("error"):
+        return detail
+    return {
+        "error": "TRAINING_BUSY",
+        "message": "Another training job is already running",
+        "suggestion": "Wait for current training to finish",
+    }
+
+
 @router.post("/training/start", response_model=TrainingStartResponse)
 def start_training(
     req: GLiNERTrainingRequest,
@@ -978,6 +999,20 @@ def start_training(
                 "train_batch_size": req.train_batch_size,
             }
         )
+    except requests.HTTPError as exc:
+        # A 409 from bioner means the trainer slot is occupied: another run is
+        # genuinely active (TRAINING_BUSY) or a stopped run hasn't wound down yet
+        # (TRAINING_STOPPING). Surface the machine-readable reason so the client
+        # can show the right message (and retry on STOPPING) instead of the run
+        # silently landing as "failed".
+        resp = exc.response
+        if resp is not None and resp.status_code == status.HTTP_409_CONFLICT:
+            training_service.fail_run(db, run.id, "trainer busy: run not started")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=_bioner_conflict_detail(resp),
+            ) from exc
+        training_service.fail_run(db, run.id, f"failed to start trainer: {exc}")
     except Exception as exc:  # trainer unreachable -> mark failed, but still return run
         training_service.fail_run(db, run.id, f"failed to start trainer: {exc}")
     return TrainingStartResponse(run_id=run.id)
