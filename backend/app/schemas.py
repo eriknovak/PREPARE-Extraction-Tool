@@ -97,6 +97,46 @@ class ClusterJobStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 
+class LiveEvalStartRequest(BaseModel):
+    """Request body to start a user-triggered live evaluation run."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: int
+    dataset_id: int
+
+
+class LiveEvalJobStartResponse(BaseModel):
+    """Response when a live-eval job is queued (or completed immediately)."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    job_id: int
+    dataset_id: int
+    model_id: int
+    total: int
+    status: str
+    # Set when the job short-circuits (e.g. no held-out reviewed records).
+    message: Optional[str] = None
+
+
+class LiveEvalJobStatusResponse(BaseModel):
+    """Progress snapshot for a live-eval job, with metrics once computed."""
+
+    model_config = ConfigDict(protected_namespaces=())
+
+    job_id: int
+    dataset_id: int
+    model_id: int
+    total: int
+    completed: int
+    status: str
+    error_message: Optional[str] = None
+    # Computed metrics: per-label exact/relaxed/overlap P/R/F1 + macro aggregate,
+    # held-out count, and a message for the empty-set case. Null until computed.
+    metrics: Optional[Dict[str, Any]] = None
+
+
 # ================================================
 # Pagination models
 # ================================================
