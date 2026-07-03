@@ -35,6 +35,47 @@
     --radius-lg: 8px;
     --radius-xl: 12px;
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08);
+
+    /* Term-extraction label palette (9 colors). Each label is a light chip with dark
+       text; --hover is a more-saturated-but-still-light tint so the dark text keeps
+       WCAG AA >= 4.5:1 against both --bg and --hover. --border is the accent ring
+       used on the label buttons' hover/active state. */
+    --label1-bg: #fca5a5;
+    --label1-text: #7f1d1d;
+    --label1-hover: #ffbcbc;
+    --label1-border: #f87171;
+    --label2-bg: #c3f5e2;
+    --label2-text: #16593f;
+    --label2-hover: #afffe1;
+    --label2-border: #4ade80;
+    --label3-bg: #d4e6f2;
+    --label3-text: #13425e;
+    --label3-hover: #bfe4fd;
+    --label3-border: #60a5fa;
+    --label4-bg: #fcffa7;
+    --label4-text: #713f12;
+    --label4-hover: #fbff93;
+    --label4-border: #facc15;
+    --label5-bg: #ffd8ef;
+    --label5-text: #61103f;
+    --label5-hover: #ffc4e7;
+    --label5-border: #e879f9;
+    --label6-bg: #5eead4;
+    --label6-text: #134e4a;
+    --label6-hover: #49ffe2;
+    --label6-border: #2dd4bf;
+    --label7-bg: #fdba74;
+    --label7-text: #7c2d12;
+    --label7-hover: #ffb05e;
+    --label7-border: #fb923c;
+    --label8-bg: #c4b5fd;
+    --label8-text: #4c1d95;
+    --label8-hover: #b39fff;
+    --label8-border: #c084fc;
+    --label9-bg: #94a3b8;
+    --label9-text: #1e293b;
+    --label9-hover: #719ddb;
+    --label9-border: #64748b;
 }
 
 * {
