@@ -823,6 +823,20 @@ class TrainingMetricPoint(BaseModel):
     eval_loss: Optional[float] = None
 
 
+class ActiveTrainingRunResponse(BaseModel):
+    """The in-flight training run, returned so the Monitor page can rehydrate
+    live progress after navigation or a full page reload (null when none)."""
+
+    run_id: int
+    dataset_ids: List[int] = Field(default_factory=list)
+    status: str
+    total_steps: Optional[int] = None
+    current_step: Optional[int] = None
+    num_epochs: Optional[int] = None
+    current_epoch: Optional[int] = None
+    metrics: List[TrainingMetricPoint] = Field(default_factory=list)
+
+
 class FullStatsRequest(BaseModel):
     """Request body for aggregated stats across multiple datasets."""
 

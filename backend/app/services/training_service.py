@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.models_db import (
     AppSettings,
@@ -151,6 +151,22 @@ def set_total_steps(db: Session, run_id: int, total_steps: int) -> None:
         return
     stats = dict(run.train_stats or {})
     stats["total_steps"] = total_steps
+    run.train_stats = stats
+    db.add(run)
+    db.commit()
+
+
+def set_num_epochs(db: Session, run_id: int, num_epochs: int) -> None:
+    """Record the planned epoch count on the run (under train_stats).
+
+    Stored alongside ``total_steps`` so the Monitor page can rehydrate the
+    epoch-based progress denominator after a reload.
+    """
+    run = db.get(TrainingRun, run_id)
+    if run is None:
+        return
+    stats = dict(run.train_stats or {})
+    stats["num_epochs"] = num_epochs
     run.train_stats = stats
     db.add(run)
     db.commit()
@@ -433,6 +449,41 @@ def get_active_runs_for_datasets(
             seen.add(run.id)
             unique.append(run)
     return unique
+
+
+def get_active_run(db: Session) -> Optional[TrainingRun]:
+    """Return the most recent pending/running training run, or None.
+
+    At most one run is meaningfully in flight instance-wide (a new run is
+    rejected while another is active for its datasets). Used to rehydrate live
+    Monitor progress on (re)mount without needing the dataset ids up front.
+
+    Args:
+        db (Session): Active DB session.
+
+    Returns:
+        Optional[TrainingRun]: The in-flight run, or None if none is active.
+    """
+    return db.exec(
+        select(TrainingRun)
+        .where(TrainingRun.status.in_(["pending", "running"]))
+        .order_by(TrainingRun.id.desc())
+    ).first()
+
+
+def get_current_step(db: Session, run_id: int) -> Optional[int]:
+    """Return the highest recorded metric step for a run (live progress cursor).
+
+    Args:
+        db (Session): Active DB session.
+        run_id (int): The training run id.
+
+    Returns:
+        Optional[int]: The max ``TrainingMetric.step``, or None if no steps yet.
+    """
+    return db.exec(
+        select(func.max(TrainingMetric.step)).where(TrainingMetric.run_id == run_id)
+    ).one()
 
 
 def update_run(

@@ -1,6 +1,7 @@
 import { apiRequest } from "./client";
 import type {
   ActiveModelResponse,
+  ActiveTrainingRun,
   DatasetsOutput,
   MessageOutput,
   ModelDetailResponse,
@@ -52,6 +53,12 @@ export function deleteRun(runId: number) {
 /** Per-epoch loss curve for a single run, ordered by epoch. */
 export function getRunMetrics(runId: number) {
   return apiRequest<TrainingMetric[]>(`/bioner/runs/${runId}/metrics`);
+}
+
+/** The current in-flight training run (null if none), used to rehydrate live
+ * progress on the Monitor page after navigation or a full page reload. */
+export function getActiveRun() {
+  return apiRequest<ActiveTrainingRun | null>("/bioner/runs/active");
 }
 
 /* ---------------- MODELS ---------------- */

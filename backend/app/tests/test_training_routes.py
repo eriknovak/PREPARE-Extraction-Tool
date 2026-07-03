@@ -781,6 +781,76 @@ def test_start_training_blocks_genuinely_active_run(client, monkeypatch):
     assert client.session.get(TrainingRun, active.id).status == "running"
 
 
+def test_active_run_null_when_idle(client):
+    """GET /runs/active returns null (200) when no run is pending/running."""
+    resp = client.get("/api/v1/bioner/runs/active")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+def test_active_run_returns_inflight_progress(client):
+    """A running run is returned with its steps, epoch bounds and loss curve so
+    the Monitor page can rehydrate live progress in one call."""
+    from app.services import training_service
+
+    db = client.session
+    run = training_service.create_run(
+        db,
+        dataset_ids=[client.dataset_id],
+        base_model="urchade/gliner_small-v2.1",
+        labels=["Drug"],
+        val_ratio=0.1,
+    )
+    training_service.mark_running(db, run.id)
+    training_service.set_total_steps(db, run.id, 200)
+    training_service.set_num_epochs(db, run.id, 4)
+    training_service.add_step_metric(db, run.id, step=10, epoch=1, loss=0.5)
+    training_service.add_step_metric(db, run.id, step=20, epoch=1, loss=0.4)
+
+    resp = client.get("/api/v1/bioner/runs/active")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body is not None
+    assert body["run_id"] == run.id
+    assert body["status"] == "running"
+    assert body["dataset_ids"] == [client.dataset_id]
+    assert body["total_steps"] == 200
+    assert body["current_step"] == 20
+    assert body["num_epochs"] == 4
+    assert body["current_epoch"] == 1
+    assert len(body["metrics"]) == 2
+    assert body["metrics"][0]["step"] == 10
+
+
+def test_active_run_hidden_from_other_user(client):
+    """A run whose dataset belongs to another user is not surfaced."""
+    from app.models_db import Dataset, User
+    from app.services import training_service
+
+    db = client.session
+    other = User(username="other", hashed_password="h")
+    db.add(other)
+    db.commit()
+    db.refresh(other)
+    other_ds = Dataset(name="ods", labels=["Drug"], user_id=other.id)
+    db.add(other_ds)
+    db.commit()
+    db.refresh(other_ds)
+
+    run = training_service.create_run(
+        db,
+        dataset_ids=[other_ds.id],
+        base_model="b",
+        labels=["Drug"],
+        val_ratio=0.1,
+    )
+    training_service.mark_running(db, run.id)
+
+    resp = client.get("/api/v1/bioner/runs/active")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
 def test_epoch_update_not_persisted_but_train_log_is(client):
     """train_log is the single source of truth for the loss curve; the redundant
     epoch_update tick must not persist a duplicate (step-less) metric row."""

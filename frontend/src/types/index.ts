@@ -586,6 +586,19 @@ export interface TrainingMetric {
   eval_loss?: number | null;
 }
 
+/** The in-flight training run, used to rehydrate live Monitor progress after
+ *  navigating away and back or after a full page reload. Null when idle. */
+export interface ActiveTrainingRun {
+  run_id: number;
+  dataset_ids: number[];
+  status: string;
+  total_steps?: number | null;
+  current_step?: number | null;
+  num_epochs?: number | null;
+  current_epoch?: number | null;
+  metrics: TrainingMetric[];
+}
+
 /** Per-model detail: training datasets, snapshot stats, base-vs-trained eval. */
 export interface ModelDetailResponse {
   model_id: number;
