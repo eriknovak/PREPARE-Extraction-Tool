@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { useAuth } from "@hooks/useAuth";
 import { useToast } from "@hooks/useToast";
+import { ApiError } from "@api/client";
 import {
   getActiveRun,
   getDatasets,
@@ -15,6 +16,30 @@ import type { MonitorDataset, MonitorDatasetStats, TrainingMetric } from "types"
 
 import { DEFAULT_MODEL, MonitorContext } from "../hooks/useMonitor";
 import type { MonitorContextValue, MonitorView } from "../hooks/useMonitor";
+
+/**
+ * Map a failed `startTraining` request to an actionable toast payload.
+ *
+ * A 409 from the backend carries a machine-readable code: the trainer slot is
+ * held by a genuinely-active run (`TRAINING_BUSY`) or by a previous run that is
+ * still winding down after a stop (`TRAINING_STOPPING`, worth retrying). Anything
+ * else falls back to the error's own message.
+ */
+const describeStartError = (err: unknown): { message: string; suggestion?: string } => {
+  if (err instanceof ApiError && err.status === 409) {
+    const code = (err.detail as { error?: string } | null | undefined)?.error;
+    if (code === "TRAINING_STOPPING") {
+      return {
+        message: "Previous run is still stopping",
+        suggestion: "Try again in a moment.",
+      };
+    }
+    if (code === "TRAINING_BUSY") {
+      return { message: "Another training run is already active." };
+    }
+  }
+  return { message: err instanceof Error ? err.message : String(err) };
+};
 
 /** Provides all Monitor state + actions to the page and its views. */
 const MonitorProvider = ({ children }: { children: ReactNode }) => {
@@ -356,7 +381,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     } catch (err) {
       setIsTraining(false);
       setTrainingStatus("Training failed to start");
-      showAlert({ message: err instanceof Error ? err.message : String(err) }, "error");
+      showAlert(describeStartError(err), "error");
     }
   };
 

@@ -23,11 +23,17 @@ class Settings(BaseSettings):
             makes the first CPU step crawl).
         BIONER_TRAIN_CONTEXT_PAD (int): Tokens of context kept on each side of a
             span group when trimming long records to training windows.
+        TRAINING_STOP_JOIN_TIMEOUT (float): Seconds to wait for a stop-requested
+            training worker to wind down before a new run is reported as still
+            stopping (409 TRAINING_STOPPING). Kept short so the API stays
+            responsive; the client retries.
     """
 
     BACKEND_HOST: str = "http://localhost:8000"
     BIONER_TRAIN_MAX_TOKENS: int = 256
     BIONER_TRAIN_CONTEXT_PAD: int = 64
+
+    TRAINING_STOP_JOIN_TIMEOUT: float = 5.0
 
     # ======================================================
     # Environment setting

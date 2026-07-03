@@ -315,6 +315,51 @@ def test_start_rejects_concurrent_active_run(client):
     assert second.status_code == 409
 
 
+def test_start_propagates_bioner_busy_409(client, monkeypatch):
+    """A 409 from bioner is surfaced with its machine-readable reason code.
+
+    Instead of silently marking the run failed and returning success, the proxy
+    must return 409 with bioner's ``detail`` so the frontend can distinguish a
+    genuinely-busy trainer from one that is still stopping (and retry).
+    """
+    import requests
+
+    class _Resp:
+        status_code = 409
+
+        def json(self):
+            return {
+                "detail": {
+                    "error": "TRAINING_STOPPING",
+                    "message": "Previous training run is still stopping",
+                    "suggestion": "Retry in a moment",
+                }
+            }
+
+    def _raise(*args, **kwargs):
+        raise requests.HTTPError(response=_Resp())
+
+    monkeypatch.setattr("app.services.bioner_client.start_training", _raise)
+
+    resp = client.post(
+        "/api/v1/bioner/training/start",
+        json={
+            "dataset_id": client.dataset_id,
+            "labels": ["Drug"],
+            "base_model": "urchade/gliner_small-v2.1",
+            "val_ratio": 0.1,
+        },
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["error"] == "TRAINING_STOPPING"
+
+    # The created run must not linger as active — it is marked failed so the
+    # datasets aren't wedged.
+    db = client.session
+    runs = db.exec(select(TrainingRun)).all()
+    assert runs and all(r.status == "failed" for r in runs)
+
+
 def test_list_runs_paginated_and_enriched(client):
     from app.services import training_service
 
