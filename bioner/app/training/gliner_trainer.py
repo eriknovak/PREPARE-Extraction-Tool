@@ -131,40 +131,135 @@ def gold_to_entities(text: str, gold: list[list]) -> list[Entity]:
     ]
 
 
-def convert_to_gliner_format(data: list[dict]) -> list[dict]:
-    """Convert ``{"text": ..., "labels": [...]}`` items into GLiNER format.
+def _token_char_starts(tokens: list[str]) -> list[int]:
+    """Char start offset of each token in ``" ".join(tokens)``.
+
+    Tokens are joined by single spaces, so every token starts one character past
+    the end of the previous one. Shared by span cleaning and window realignment
+    so both derive character offsets from the exact same join logic.
 
     Args:
-        data (list[dict]): Items with ``text`` and ``labels`` keys.
+        tokens (list[str]): The token strings.
 
     Returns:
-        list[dict]: Items with ``text`` and ``ner`` keys, where ``ner`` is a
-            list of ``[start, end, label]`` spans.
+        list[int]: The character start offset of each token.
     """
+    starts: list[int] = []
+    offset = 0
+    for tok in tokens:
+        starts.append(offset)
+        offset += len(tok) + 1
+    return starts
 
-    converted = []
 
-    for item in data:
-        text = item.get("text", "")
-        labels = item.get("labels", [])
+def _window_example(item: dict, max_tokens: int, pad: int) -> list[dict]:
+    """Split a cleaned token-form item into bounded, span-centred windows.
 
-        if not text or not labels:
+    Long records blow up GLiNER's ``seq_len x span_width x num_classes`` score
+    tensor and make the first CPU step crawl. This trims each example to windows
+    of at most ``max_tokens`` tokens centred on its span groups: co-occurring
+    spans that fit within the budget are greedily packed into ONE window (so a
+    record like "the patient has a cold and a headache" stays a single two-span
+    example), and only spans too far apart to share a window spill into additional
+    windows.
+
+    Works in token space on the corrected inclusive spans, then recomputes both
+    the token ``ner`` (offset by the window start) and the character ``ner_char``
+    (from the windowed tokens via :func:`_token_char_starts`) so realignment is
+    exact.
+
+    Args:
+        item (dict): A cleaned item with ``tokenized_text``, inclusive token
+            spans in ``ner`` and character spans in ``ner_char``.
+        max_tokens (int): Hard cap on tokens per window; no emitted window ever
+            exceeds this.
+        pad (int): Context tokens kept on each side of a span group.
+
+    Returns:
+        list[dict]: One or more windowed items with realigned spans. Returns the
+            input unchanged (single-item list) when it already fits within
+            ``max_tokens``. A span wider than ``max_tokens`` on its own is dropped
+            (logged) rather than shipped oversized.
+    """
+    tokens = item["tokenized_text"]
+    ner = item["ner"]
+
+    if len(tokens) <= max_tokens or not ner:
+        return [item]
+
+    last_idx = len(tokens) - 1
+
+    # Greedily pack spans (in start order) into groups whose padded extent fits
+    # the budget. A span only opens a new group when it cannot share the current
+    # one — never one-window-per-span while they could co-occur.
+    spans = sorted(ner, key=lambda s: (s[0], s[1]))
+    groups: list[list[list]] = []
+    current: list[list] = []
+    cur_min = cur_max = 0
+    for span in spans:
+        start, end, _ = span
+        if not current:
+            current = [span]
+            cur_min, cur_max = start, end
             continue
+        new_min = min(cur_min, start)
+        new_max = max(cur_max, end)
+        win_start = max(0, new_min - pad)
+        win_end = min(last_idx, new_max + pad)
+        if win_end - win_start + 1 <= max_tokens:
+            current.append(span)
+            cur_min, cur_max = new_min, new_max
+        else:
+            groups.append(current)
+            current = [span]
+            cur_min, cur_max = start, end
+    if current:
+        groups.append(current)
 
-        ner = []
+    windows: list[dict] = []
+    for group in groups:
+        g_min = min(s[0] for s in group)
+        g_max = max(s[1] for s in group)
+        win_start = max(0, g_min - pad)
+        win_end = min(last_idx, g_max + pad)
+        # Hard cap: only reachable when a single span's own extent exceeds the
+        # budget; clamp the window and drop spans that fall outside it below.
+        if win_end - win_start + 1 > max_tokens:
+            win_end = min(last_idx, win_start + max_tokens - 1)
 
-        # naive label matching (fast baseline)
-        for label in labels:
-            start = text.lower().find(label.lower())
+        win_tokens = tokens[win_start : win_end + 1]
+        char_starts = _token_char_starts(win_tokens)
 
-            if start != -1:
-                ner.append([start, start + len(label), label])
+        win_ner: list[list] = []
+        win_ner_char: list[list] = []
+        for start, end, label in group:
+            if start < win_start or end > win_end:
+                logger.warning(
+                    "Dropping span [%d, %d] (%s): wider than max_tokens=%d",
+                    start,
+                    end,
+                    label,
+                    max_tokens,
+                )
+                continue
+            rel_start = start - win_start
+            rel_end = end - win_start
+            win_ner.append([rel_start, rel_end, label])
+            char_start = char_starts[rel_start]
+            char_end = char_starts[rel_end] + len(win_tokens[rel_end])
+            win_ner_char.append([char_start, char_end, label])
 
-        # only keep valid samples
-        if ner:
-            converted.append({"text": text, "ner": ner})
+        if win_ner:
+            windows.append(
+                {
+                    "text": " ".join(win_tokens),
+                    "tokenized_text": win_tokens,
+                    "ner": win_ner,
+                    "ner_char": win_ner_char,
+                }
+            )
 
-    return converted
+    return windows
 
 
 class GLiNERDataset(TorchDataset):
@@ -412,17 +507,19 @@ class GLiNERFinetuner:
 
                 # Char start offset of each token in the joined `text`
                 # (tokens are joined by single spaces).
-                token_char_starts = []
-                offset = 0
-                for tok in tokens:
-                    token_char_starts.append(offset)
-                    offset += len(tok) + 1
+                token_char_starts = _token_char_starts(tokens)
 
                 # Validate NER entries (token indices should be in range).
-                # `ner` stays as TOKEN spans into `tokenized_text` — that is
-                # what GLiNER's collator consumes. Everything that slices
-                # ``text[start:end]`` (eval, serialized samples) must use the
-                # CHARACTER spans kept in `ner_char` instead.
+                # `ner` stays as INCLUSIVE TOKEN spans into `tokenized_text` —
+                # that is what GLiNER's collator consumes. GLiNER 0.2.x builds
+                # candidate spans as ``(start, start + width)`` with ``width``
+                # starting at 0, so a single-token entity at token ``i`` is the
+                # inclusive span ``(i, i)`` and the gold lookup is an exact tuple
+                # match. Keeping the end token as-is (no ``+ 1``) is what makes the
+                # target line up; a ``+ 1`` trains the model one token too wide and
+                # silently drops any entity ending on the last token. Everything
+                # that slices ``text[start:end]`` (eval, serialized samples) must
+                # use the CHARACTER spans kept in `ner_char` instead.
                 valid_ner = []
                 valid_ner_char = []
                 for ent in ner:
@@ -435,7 +532,7 @@ class GLiNERFinetuner:
                         ):
                             # Token indices are already correct, just validate bounds
                             if 0 <= start_tok <= end_tok < len(tokenized_text):
-                                valid_ner.append([start_tok, end_tok + 1, label])
+                                valid_ner.append([start_tok, end_tok, label])
                                 char_start = token_char_starts[start_tok]
                                 char_end = token_char_starts[end_tok] + len(
                                     tokens[end_tok]
@@ -443,13 +540,22 @@ class GLiNERFinetuner:
                                 valid_ner_char.append([char_start, char_end, label])
 
                 if valid_ner:
-                    cleaned_data.append(
-                        {
-                            "text": text,
-                            "tokenized_text": tokens,
-                            "ner": valid_ner,
-                            "ner_char": valid_ner_char,
-                        }
+                    cleaned_item = {
+                        "text": text,
+                        "tokenized_text": tokens,
+                        "ner": valid_ner,
+                        "ner_char": valid_ner_char,
+                    }
+                    # TODO(structural-chunking): tier-1 sentence/section split
+                    # (syntok/medspacy) before the span-window fallback —
+                    # rule-based segmenters are weak on messy bulleted clinical
+                    # text, so span-window is the robust default we ship first.
+                    cleaned_data.extend(
+                        _window_example(
+                            cleaned_item,
+                            settings.BIONER_TRAIN_MAX_TOKENS,
+                            settings.BIONER_TRAIN_CONTEXT_PAD,
+                        )
                     )
                 continue
 
@@ -916,13 +1022,11 @@ class GLiNERFinetuner:
 
             # If we have tokenized_text, spans are token indices; otherwise character indices
             if tokenized_text:
-                # Token indices - validate bounds
+                # Token spans are INCLUSIVE, so end indexes a real token
+                # (end < len) and a single-token entity has start == end.
                 for start, end, label in item["ner"]:
-                    assert 0 <= start <= end <= len(tokenized_text), (
+                    assert 0 <= start <= end < len(tokenized_text), (
                         f"Token index out of bounds: [{start}:{end}] for {len(tokenized_text)} tokens"
-                    )
-                    assert start < end, (
-                        f"Invalid token span: start={start} must be < end={end}"
                     )
             else:
                 # Character indices - validate span is not empty

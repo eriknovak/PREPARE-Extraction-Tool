@@ -141,16 +141,41 @@ const TrainingView = () => {
       </Card>
 
       {/* STATS + LABELS */}
-      {trainingStats && (
-        <Card title="Labels & statistics">
-          <div className={styles.stats}>
-            <StatCard label="Records" value={trainingStats.totalRecords} />
-            <StatCard label="Terms" value={trainingStats.totalTerms} />
-          </div>
+      {trainingStats &&
+        (() => {
+          const excluded = trainingStats.totalRecords - trainingStats.reviewedRecords;
+          const allReviewed = excluded <= 0;
+          return (
+            <Card title="Labels & statistics">
+              <div className={styles.stats}>
+                <StatCard
+                  label="Records (used for training)"
+                  value={trainingStats.reviewedRecords}
+                  subtext={`of ${trainingStats.totalRecords.toLocaleString()} in dataset`}
+                />
+                <StatCard
+                  label="Terms (used for training)"
+                  value={trainingStats.reviewedTerms}
+                  subtext={`of ${trainingStats.totalTerms.toLocaleString()} in dataset`}
+                />
+              </div>
 
-          <LabelSelector datasetStats={trainingStats} onChange={setSelectedLabels} />
-        </Card>
-      )}
+              <p
+                className={classNames(styles.reviewCallout, {
+                  [styles["reviewCallout--warn"]]: !allReviewed,
+                  [styles["reviewCallout--ok"]]: allReviewed,
+                })}
+                role="note"
+              >
+                {allReviewed
+                  ? `All ${trainingStats.totalRecords.toLocaleString()} records reviewed — the full dataset will be used.`
+                  : `Only reviewed records are used for training and evaluation. ${excluded.toLocaleString()} of ${trainingStats.totalRecords.toLocaleString()} records are not yet reviewed and will be excluded.`}
+              </p>
+
+              <LabelSelector datasetStats={trainingStats} onChange={setSelectedLabels} />
+            </Card>
+          );
+        })()}
 
       {/* TRAINING CONFIG */}
       <Card title="Training configuration">

@@ -16,6 +16,13 @@ class Settings(BaseSettings):
         BACKEND_HOST (str): Base URL of the backend service used for training
             event callbacks. Defaults to localhost for local runs; overridden to
             the compose service name (http://backend:8000) in docker-compose.
+        BIONER_TRAIN_MAX_TOKENS (int): Hard cap on tokens per training window.
+            Long records are trimmed to span-centred windows of at most this many
+            tokens before reaching the GLiNER collator, bounding the
+            ``seq_len x span_width x num_classes`` score tensor (which otherwise
+            makes the first CPU step crawl).
+        BIONER_TRAIN_CONTEXT_PAD (int): Tokens of context kept on each side of a
+            span group when trimming long records to training windows.
         TRAINING_STOP_JOIN_TIMEOUT (float): Seconds to wait for a stop-requested
             training worker to wind down before a new run is reported as still
             stopping (409 TRAINING_STOPPING). Kept short so the API stays
@@ -23,6 +30,8 @@ class Settings(BaseSettings):
     """
 
     BACKEND_HOST: str = "http://localhost:8000"
+    BIONER_TRAIN_MAX_TOKENS: int = 256
+    BIONER_TRAIN_CONTEXT_PAD: int = 64
 
     TRAINING_STOP_JOIN_TIMEOUT: float = 5.0
 
