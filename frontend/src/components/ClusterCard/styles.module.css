@@ -216,34 +216,49 @@
   align-self: center;
 }
 
-.cluster-card__label-badge.condition {
-  background: #fee2e2;
-  color: #7f1d1d;
+.cluster-card__label-badge.label1 {
+  background: var(--label1-bg);
+  color: var(--label1-text);
 }
 
-.cluster-card__label-badge.medication {
-  background: #ede9fe;
-  color: #4c1d95;
+.cluster-card__label-badge.label2 {
+  background: var(--label2-bg);
+  color: var(--label2-text);
 }
 
-.cluster-card__label-badge.labtest {
-  background: #fed7aa;
-  color: #7c2d12;
+.cluster-card__label-badge.label3 {
+  background: var(--label3-bg);
+  color: var(--label3-text);
 }
 
-.cluster-card__label-badge.procedure {
-  background: #dbeafe;
-  color: #13425e;
+.cluster-card__label-badge.label4 {
+  background: var(--label4-bg);
+  color: var(--label4-text);
 }
 
-.cluster-card__label-badge.bodypart {
-  background: #d1fae5;
-  color: #16593f;
+.cluster-card__label-badge.label5 {
+  background: var(--label5-bg);
+  color: var(--label5-text);
 }
 
-.cluster-card__label-badge.default {
-  background: #f3f4f6;
-  color: #1e293b;
+.cluster-card__label-badge.label6 {
+  background: var(--label6-bg);
+  color: var(--label6-text);
+}
+
+.cluster-card__label-badge.label7 {
+  background: var(--label7-bg);
+  color: var(--label7-text);
+}
+
+.cluster-card__label-badge.label8 {
+  background: var(--label8-bg);
+  color: var(--label8-text);
+}
+
+.cluster-card__label-badge.label9 {
+  background: var(--label9-bg);
+  color: var(--label9-text);
 }
 
 /* Custom label styles */

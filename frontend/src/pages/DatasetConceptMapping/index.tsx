@@ -606,7 +606,7 @@ export default function DatasetConceptMapping() {
         {error && (
           <div className={styles["page__error"]}>
             {error}
-            <Button variant="ghost" size="icon" onClick={() => setError(null)}>
+            <Button variant="ghost" size="icon" onClick={() => setError(null)} aria-label="Dismiss error">
               ×
             </Button>
           </div>

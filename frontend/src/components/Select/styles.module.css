@@ -62,6 +62,11 @@
   box-shadow: 0 0 0 2px rgba(17, 65, 94, 0.1);
 }
 
+.select__trigger:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
 .select__trigger:disabled {
   cursor: not-allowed;
   background: #f9fafb;

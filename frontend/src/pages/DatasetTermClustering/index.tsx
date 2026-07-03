@@ -880,7 +880,7 @@ export default function DatasetTermClustering() {
           {error && (
             <div className={styles.error}>
               {error}
-              <Button variant="ghost" size="icon" onClick={() => setError(null)}>
+              <Button variant="ghost" size="icon" onClick={() => setError(null)} aria-label="Dismiss error">
                 ×
               </Button>
             </div>
@@ -904,6 +904,7 @@ export default function DatasetTermClustering() {
                     <ClusterCard
                       key={cluster.id}
                       cluster={cluster}
+                      labels={labels}
                       onRename={(title) => handleRename(cluster.id, title)}
                       onDelete={() => handleDelete(cluster.id)}
                       onRemoveTerm={handleRemoveTerm}
