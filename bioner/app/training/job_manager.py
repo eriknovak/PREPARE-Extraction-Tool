@@ -4,6 +4,7 @@ import threading
 from enum import Enum
 from typing import Dict, Optional
 
+from app.core.settings import settings
 from app.training.gliner_trainer import GLiNERFinetuner
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,8 @@ _TERMINAL_STATUSES = ("completed", "failed", "stopped")
 # request, join its worker thread for at most this long before giving up and
 # reporting the slot as still busy (STOPPING). Kept short so the API stays
 # responsive; the caller/frontend retries once the previous run has wound down.
-JOIN_TIMEOUT_SECONDS = 5.0
+# Sourced from settings so deployments can tune it via TRAINING_STOP_JOIN_TIMEOUT.
+JOIN_TIMEOUT_SECONDS = settings.TRAINING_STOP_JOIN_TIMEOUT
 
 
 class StartResult(str, Enum):
