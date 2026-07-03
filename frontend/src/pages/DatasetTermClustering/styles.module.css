@@ -223,3 +223,28 @@
   color: #d1d5db;
   cursor: not-allowed;
 }
+
+/* Cluster All Labels progress banner */
+.cluster-all-progress {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.cluster-all-progress__label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #1e40af;
+  white-space: nowrap;
+}
+
+.cluster-all-progress__bar {
+  flex: 1;
+  min-width: 200px;
+}
