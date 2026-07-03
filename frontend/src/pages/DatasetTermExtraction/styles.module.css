@@ -1151,6 +1151,14 @@
   margin: 0;
 }
 
+/* Muted help line clarifying auto vs manual linking */
+.link-help {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
 /* Link mode indicator banner */
 .link-mode-banner {
   padding: 6px 10px;

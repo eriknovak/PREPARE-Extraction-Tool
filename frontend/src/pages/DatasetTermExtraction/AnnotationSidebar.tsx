@@ -284,6 +284,12 @@ const AnnotationSidebar: React.FC<AnnotationSidebarProps> = ({
                 </Button>
               )}
             </div>
+            {!readOnly && labelRelations.length > 0 && !linkMode && (
+              <p className={styles["link-help"]}>
+                Related terms are linked automatically during extraction when adjacent in the same sentence. Press L to
+                link manually.
+              </p>
+            )}
             {linkMode && (
               <div className={styles["link-mode-banner"]}>
                 {linkFromId === null
