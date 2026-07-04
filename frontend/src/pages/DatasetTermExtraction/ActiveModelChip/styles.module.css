@@ -4,22 +4,22 @@
   align-items: center;
   gap: 6px;
   padding: 4px 10px;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
+  background: var(--color-info-tint);
+  border: 1px solid var(--color-info-tint);
   border-radius: 20px;
   font-size: 13px;
   font-weight: 500;
-  color: #0369a1;
+  color: var(--color-info-hover);
   white-space: nowrap;
 }
 
 .chipLabel {
   font-weight: 600;
-  color: #6b7280;
+  color: var(--color-text-muted);
 }
 
 .chipName {
-  color: #11415e;
+  color: var(--color-primary-dark);
   font-weight: 600;
 }
 
@@ -27,8 +27,8 @@
   display: inline-flex;
   align-items: center;
   padding: 1px 8px;
-  background: #0369a1;
-  color: #ffffff;
+  background: var(--color-info-hover);
+  color: var(--color-surface);
   border-radius: 12px;
   font-size: 11px;
   font-weight: 600;
@@ -37,6 +37,6 @@
 }
 
 .chipLink:hover {
-  background: #0c4a6e;
+  background: var(--color-primary-dark);
   text-decoration: none;
 }
