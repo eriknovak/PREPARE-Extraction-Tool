@@ -11,6 +11,7 @@ import { BarChart, ChartState, LineChart } from "@components/charts";
 import type { DefaultModelInfo, DiscoveredModelSummary, ModelDetailResponse, TrainingMetric } from "types";
 
 import { buildLossSeries, formatEpoch, formatLoss } from "../../chartData";
+import LiveEvalPanel from "../../components/LiveEvalPanel";
 import { useMonitor } from "../../hooks/useMonitor";
 import styles from "./styles.module.css";
 
@@ -508,7 +509,10 @@ const ModelsView = () => {
         ) : selectedId < 0 ? (
           <ModelDetail detail={null} metrics={[]} />
         ) : (
-          <ModelDetail detail={detail} metrics={metrics} />
+          <>
+            <ModelDetail detail={detail} metrics={metrics} />
+            <LiveEvalPanel key={selectedId} modelId={selectedId} />
+          </>
         )}
       </section>
 
