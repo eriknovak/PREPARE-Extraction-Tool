@@ -59,31 +59,40 @@
 }
 
 .labels__badge--label1 {
-  background: #e5e7eb;
+  background: var(--label1-bg);
+  color: var(--label1-text);
 }
 .labels__badge--label2 {
-  background: #e5e7eb;
+  background: var(--label2-bg);
+  color: var(--label2-text);
 }
 .labels__badge--label3 {
-  background: #e5e7eb;
+  background: var(--label3-bg);
+  color: var(--label3-text);
 }
 .labels__badge--label4 {
-  background: #e5e7eb;
+  background: var(--label4-bg);
+  color: var(--label4-text);
 }
 .labels__badge--label5 {
-  background: #e5e7eb;
+  background: var(--label5-bg);
+  color: var(--label5-text);
 }
 .labels__badge--label6 {
-  background: #e5e7eb;
+  background: var(--label6-bg);
+  color: var(--label6-text);
 }
 .labels__badge--label7 {
-  background: #e5e7eb;
+  background: var(--label7-bg);
+  color: var(--label7-text);
 }
 .labels__badge--label8 {
-  background: #e5e7eb;
+  background: var(--label8-bg);
+  color: var(--label8-text);
 }
 .labels__badge--label9 {
-  background: #e5e7eb;
+  background: var(--label9-bg);
+  color: var(--label9-text);
 }
 
 /* Metadata Section */

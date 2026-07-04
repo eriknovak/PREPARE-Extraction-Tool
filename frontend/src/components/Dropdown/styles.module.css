@@ -46,6 +46,11 @@
   background-color: #f3f4f6;
 }
 
+.dropdown__item:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: -2px;
+}
+
 .dropdown__item--danger {
   color: #dc2626;
 }

@@ -28,6 +28,11 @@
   transform: scale(0.98);
 }
 
+.term-item:focus-visible {
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
+}
+
 .term-item--dragging {
   opacity: 0;
 }
@@ -106,13 +111,20 @@
   opacity: 0;
 }
 
-.term-item:hover .term__remove-btn {
+.term-item:hover .term__remove-btn,
+.term-item:focus-within .term__remove-btn {
   opacity: 1;
 }
 
 .term__remove-btn:hover {
   color: #dc2626;
   background: #fef2f2;
+}
+
+.term__remove-btn:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--color-info);
+  outline-offset: 2px;
 }
 
 @media (max-width: 768px) {
