@@ -2,31 +2,6 @@
   font-family: "Nunito Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
-.upload__title {
-  margin: 0 0 0;
-  font-size: 26px;
-  font-weight: 700;
-  color: #11415e;
-}
-
-.upload__sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.upload__back-link {
-  font-size: 14px;
-  font-weight: 500;
-  color: #11415e;
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-
-.upload__back-link:hover {
-  color: #144d70;
-}
-
 .upload__content {
   display: grid;
   grid-template-columns: 1fr 320px;

@@ -9,11 +9,11 @@ import * as api from "@/api";
 import Button from "@/components/Button";
 import StatCard from "@/components/StatCard";
 import WorkflowCard from "@/components/WorkflowCard";
+import WorkflowPageHeader from "@/components/WorkflowPageHeader";
 import ProgressBar from "@/components/ProgressBar";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import { ToastContainer } from "@/components/Toast/ToastContainer";
-import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faObjectGroup, faMapLocationDot, faFilePen, faArrowLeft } from "@fortawesome/free-solid-svg-icons";
+import { faObjectGroup, faMapLocationDot, faFilePen } from "@fortawesome/free-solid-svg-icons";
 import { useDatasetExtractionJob } from "@/hooks/useDatasetExtractionJob";
 import { useAutoMapJob, type AutoMapJobProgress } from "@/hooks/useAutoMapJob";
 import { useClusterAllJob } from "@/hooks/useClusterAllJob";
@@ -268,17 +268,11 @@ const DatasetOverview = () => {
     <Layout>
       <div className={styles.page}>
         {/* Header Section */}
-        <div className={styles.header}>
-          <div className={styles["header__title-section"]}>
-            <Button variant="outline" size="icon" onClick={() => navigate("/datasets")} aria-label="Back to Datasets">
-              <FontAwesomeIcon icon={faArrowLeft} />
-            </Button>
-            <div>
-              <h1 className={styles.header__title}>{overview.dataset.name}</h1>
-              <p className={styles.header__subtitle}>Dataset Overview and Statistics</p>
-            </div>
-          </div>
-        </div>
+        <WorkflowPageHeader
+          title={overview.dataset.name}
+          subtitle="Dataset Overview and Statistics"
+          backButton={{ label: "Back to Datasets", to: "/datasets", title: "Back to Datasets" }}
+        />
 
         {/* Labels Section */}
         {overview.dataset.labels.length > 0 && (

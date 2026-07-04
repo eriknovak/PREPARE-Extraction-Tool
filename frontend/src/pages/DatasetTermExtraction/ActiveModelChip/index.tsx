@@ -1,6 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
-import styles from "./ActiveModelChip.module.css";
+import styles from "./styles.module.css";
 
 interface ActiveModelChipProps {
   modelName: string;

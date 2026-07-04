@@ -26,6 +26,12 @@
   font-size: 14px;
 }
 
+.header__subtitle {
+  margin: 0;
+  font-size: 14px;
+  color: #6b7280;
+}
+
 /* Info Tooltip */
 .info-tooltip {
   position: relative;
