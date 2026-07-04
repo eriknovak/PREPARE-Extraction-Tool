@@ -681,6 +681,49 @@ export interface ModelDetailResponse {
   per_label_baseline: { [label: string]: { [metric: string]: number } };
 }
 
+/** Precision/recall/F1 for one match mode (exact/relaxed/overlap). */
+export interface LiveEvalScore {
+  precision: number;
+  recall: number;
+  f1: number;
+}
+
+/** Computed live-eval metrics: per-label + macro aggregate across match modes. */
+export interface LiveEvalMetrics {
+  labels: string[];
+  match_types: string[];
+  per_label: { [label: string]: { [matchType: string]: LiveEvalScore } };
+  aggregate: { [matchType: string]: LiveEvalScore };
+  aggregate_method?: string;
+  gold_entity_count?: number;
+  pred_entity_count?: number;
+  heldout_count: number;
+  /** Set when the held-out set is empty (nothing to score). */
+  message?: string;
+}
+
+/** Response when a live-eval job is queued (or short-circuits immediately). */
+export interface LiveEvalJobStartResponse {
+  job_id: number;
+  dataset_id: number;
+  model_id: number;
+  total: number;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  message?: string | null;
+}
+
+/** Progress snapshot for a live-eval job, with metrics once complete. */
+export interface LiveEvalJobStatusResponse {
+  job_id: number;
+  dataset_id: number;
+  model_id: number;
+  total: number;
+  completed: number;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  error_message?: string | null;
+  metrics?: LiveEvalMetrics | null;
+}
+
 /** Dataset statistics used by the monitoring dashboard. */
 export interface MonitorDatasetStats {
   // Totals over the whole dataset(s).

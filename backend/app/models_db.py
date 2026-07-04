@@ -572,6 +572,49 @@ class ClusterJob(SQLModel, table=True):
     currently_used: bool = Field(default=True)  # only one True
 
 
+class LiveEvalJob(SQLModel, table=True):
+    """
+    Tracks progress for a user-triggered live evaluation run.
+
+    Keyed on a (model, dataset) pair: runs the model over the dataset's reviewed,
+    held-out records (records NOT used to train the model that carry gold
+    SourceTerm annotations) and scores the model's predictions against those gold
+    terms. Mirrors ExtractionJob's lifecycle (pending|running|completed|failed|
+    cancelled) with a per-record progress bar (``completed``/``total``).
+
+    The computed precision/recall/F1 metrics are stored on ``metrics`` — isolated
+    here so live eval never touches the shared ``Evaluation`` table read by the
+    base-vs-trained per-label chart. Predictions are written to ``SourceTermEx``
+    (never ``SourceTerm``).
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+
+    dataset_id: int = Field(
+        foreign_key="dataset.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    model_id: int = Field(
+        foreign_key="model.id", ondelete="CASCADE", nullable=False, index=True
+    )
+    total: int = Field(default=0)
+    completed: int = Field(default=0)
+    status: str = Field(
+        default="pending", index=True
+    )  # pending|running|completed|failed|cancelled
+    error_message: Optional[str] = Field(default=None)
+
+    # Computed metrics: per-label exact/relaxed/overlap P/R/F1 + macro aggregate,
+    # held-out count, and a message for the empty-set case. Null until computed.
+    metrics: Optional[dict] = Field(
+        default=None, sa_column=Column(JSON, nullable=True)
+    )
+
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    currently_used: bool = Field(default=True)  # only one True
+
+
 class Vocabulary(SQLModel, table=True):
     """
     Vocabulary model representing a standardized terminology system.

@@ -823,10 +823,11 @@ def set_active_model(
 ):
     """Set/clear the GLOBAL active extraction model and hot-swap bioner.
 
-    Blocked (409) while any extraction job is active instance-wide so an in-flight
-    job's pinned model can't be undermined.
+    Blocked (409) while any extraction OR live-eval job is active instance-wide so
+    an in-flight job's pinned model can't be undermined (live eval hot-swaps and
+    restores this same global model).
     """
-    if extraction_lock.any_extraction_job_active(db):
+    if extraction_lock.any_ner_job_active(db):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Cannot change the model while an extraction job is running",
