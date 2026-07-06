@@ -167,6 +167,9 @@ services:
       # GLiNER fine-tuning window budget (read by app/core/settings.py)
       - BIONER_TRAIN_MAX_TOKENS=${BIONER_TRAIN_MAX_TOKENS:-256}
       - BIONER_TRAIN_CONTEXT_PAD=${BIONER_TRAIN_CONTEXT_PAD:-64}
+      - BIONER_TRAIN_MICRO_BATCH=${BIONER_TRAIN_MICRO_BATCH:-2}
+      # Eval-loss interval in optimizer steps (0 = auto ~18 points; 1 = every step)
+      - BIONER_TRAIN_EVAL_STEPS=${BIONER_TRAIN_EVAL_STEPS:-0}
     healthcheck:
       test:
         ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]

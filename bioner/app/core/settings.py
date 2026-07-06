@@ -23,6 +23,17 @@ class Settings(BaseSettings):
             makes the first CPU step crawl).
         BIONER_TRAIN_CONTEXT_PAD (int): Tokens of context kept on each side of a
             span group when trimming long records to training windows.
+        BIONER_TRAIN_MICRO_BATCH (int): Cap on the per-forward micro-batch size
+            during fine-tuning. The effective batch (``train_batch_size``) is
+            kept via gradient accumulation, so only activation memory shrinks.
+            CPU training with a full batch of 8 peaked above 14 GB RSS and got
+            the service OOM-killed by the kernel.
+        BIONER_TRAIN_EVAL_STEPS (int): Eval-loss interval in optimizer steps.
+            0 (default) = auto: ~18 evenly spaced eval points across the run,
+            the standard practice, keeping eval cost bounded as datasets grow.
+            Set >= 1 to force a fixed interval (1 = evaluate every step for a
+            fully dense curve; each eval pass reads the whole validation split,
+            which on CPU can take several times longer than a train step).
         TRAINING_STOP_JOIN_TIMEOUT (float): Seconds to wait for a stop-requested
             training worker to wind down before a new run is reported as still
             stopping (409 TRAINING_STOPPING). Kept short so the API stays
@@ -32,6 +43,8 @@ class Settings(BaseSettings):
     BACKEND_HOST: str = "http://localhost:8000"
     BIONER_TRAIN_MAX_TOKENS: int = 256
     BIONER_TRAIN_CONTEXT_PAD: int = 64
+    BIONER_TRAIN_MICRO_BATCH: int = 2
+    BIONER_TRAIN_EVAL_STEPS: int = 0
 
     TRAINING_STOP_JOIN_TIMEOUT: float = 5.0
 

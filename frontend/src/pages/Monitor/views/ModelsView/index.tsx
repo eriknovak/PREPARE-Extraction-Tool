@@ -69,7 +69,9 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
 
   const lossSeries = [
     { name: "Train loss", data: lossValues, area: true },
-    ...(hasEvalLoss ? [{ name: "Eval loss", data: evalLoss }] : []),
+    // connectNulls: eval loss only exists every eval_steps steps; without it
+    // the sparse points have no adjacent neighbours and no line renders.
+    ...(hasEvalLoss ? [{ name: "Eval loss", data: evalLoss, connectNulls: true }] : []),
   ];
 
   // ── Per-label eval ──

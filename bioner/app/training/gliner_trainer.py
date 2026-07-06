@@ -372,14 +372,26 @@ class GLiNERFinetuner:
     # STEP MATH HELPERS
     # -----------------------------
     def _compute_total_steps(self, train_size: int) -> int:
-        """Total optimizer steps = ceil(train_size / batch) * epochs (>=1)."""
-        steps_per_epoch = max(1, math.ceil(train_size / max(1, self.train_batch_size)))
+        """Total optimizer steps, mirroring HF Trainer's accumulation math."""
+        micro_batch, accum_steps = self._compute_micro_batch()
+        micro_batches_per_epoch = max(1, math.ceil(train_size / micro_batch))
+        steps_per_epoch = max(1, micro_batches_per_epoch // accum_steps)
         return max(1, steps_per_epoch * self.num_epochs)
 
     def _compute_eval_steps(self, total_steps: int) -> int:
-        """Eval interval targeting ~18 eval points across the run (>=1)."""
+        """Eval interval in optimizer steps (>=1)."""
+        explicit = settings.BIONER_TRAIN_EVAL_STEPS
+        if explicit >= 1:
+            return explicit
         TARGET_POINTS = 18
         return max(1, total_steps // TARGET_POINTS)
+
+    def _compute_micro_batch(self) -> tuple[int, int]:
+        """Micro-batch size and accumulation steps for the effective batch."""
+        cap = max(1, settings.BIONER_TRAIN_MICRO_BATCH)
+        batch = max(1, self.train_batch_size)
+        micro = next(m for m in range(min(cap, batch), 0, -1) if batch % m == 0)
+        return micro, batch // micro
 
     # -----------------------------
     # STATUS (thread-safe)
@@ -988,12 +1000,17 @@ class GLiNERFinetuner:
 
         total_steps = self._compute_total_steps(len(train_data))
         eval_steps = self._compute_eval_steps(total_steps)
+        micro_batch, accum_steps = self._compute_micro_batch()
 
         eval_kwargs: dict = {}
         if eval_ds is not None:
             eval_kwargs = dict(
                 eval_strategy="steps",
                 eval_steps=eval_steps,
+                # Full batch here (unlike training): eval is a no-grad forward
+                # pass, so it has none of the activation memory that made the
+                # training batch OOM — and a bigger batch keeps the per-step
+                # eval-loss pass fast.
                 per_device_eval_batch_size=self.train_batch_size,
             )
 
@@ -1005,7 +1022,8 @@ class GLiNERFinetuner:
             fp16=False,
             use_cpu=(self.device == "cpu"),
             dataloader_num_workers=0,
-            per_device_train_batch_size=self.train_batch_size,
+            per_device_train_batch_size=micro_batch,
+            gradient_accumulation_steps=accum_steps,
             report_to="none",
             logging_strategy="steps",
             # Log every step so the live loss curve populates promptly and densely
