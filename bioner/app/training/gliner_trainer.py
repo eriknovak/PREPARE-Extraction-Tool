@@ -12,7 +12,7 @@ from typing import Any, Optional
 import requests
 import torch
 from gliner import GLiNER
-from gliner.data_processing.collator import DataCollator
+from gliner.data_processing.collator import SpanDataCollator
 from gliner.training import Trainer, TrainingArguments
 from torch.utils.data import Dataset as TorchDataset
 from transformers import TrainerCallback
@@ -296,14 +296,11 @@ class GLiNERDataset(TorchDataset):
 def _per_element_mean_loss(summed_loss, numel):
     """Normalize a sum-reduced GLiNER loss to a per-element mean for reporting.
 
-    GLiNER's ``Trainer`` defaults to ``loss_reduction='sum'`` (see
-    ``gliner/training/trainer.py``), so the model returns the loss summed over
-    every score element (``batch * seq_len * span_width * num_classes``). That
-    sum is what gets backpropagated and the tuned ``5e-6`` learning rate depends
-    on it, but it produces logged values in the thousands-to-hundreds-of-thousands
-    range. The model's own ``mean`` reduction is exactly ``sum / numel``, so
-    dividing the summed loss by the score-tensor element count yields the value
-    ``loss_reduction='mean'`` would report — a sane per-step mean — without
+    GLiNER's ``Trainer`` defaults to ``loss_reduction='sum'``, so the model
+    returns the loss summed over every score element
+    (``batch * seq_len * span_width * num_classes``) — logged values land in the
+    thousands-to-hundreds-of-thousands range. Dividing by the score-tensor
+    element count yields what ``loss_reduction='mean'`` would report, without
     touching the gradient signal.
 
     Accepts a tensor or a plain float and returns the same kind. Guards against
@@ -959,7 +956,7 @@ class GLiNERFinetuner:
     ) -> tuple[
         GLiNERDataset,
         "GLiNERDataset | None",
-        DataCollator,
+        SpanDataCollator,
         TrainingArguments,
         list[str],
         int,
@@ -976,7 +973,7 @@ class GLiNERFinetuner:
         # Eval reads gold spans from the raw items (which carry `ner_char`);
         # GLiNERDataset.__getitem__ would strip that key, so pass `val_data`.
 
-        collator = DataCollator(
+        collator = SpanDataCollator(
             model.config,
             data_processor=model.data_processor,
             prepare_labels=True,
@@ -1018,6 +1015,17 @@ class GLiNERFinetuner:
             output_dir=output_dir,
             num_train_epochs=self.num_epochs,
             learning_rate=self.learning_rate,
+            # Focal loss (not the default plain BCE) is required: the span
+            # target grid is >99.9% negative and BCE collapses the span head
+            # into scoring everything positive. Values mirror the reference
+            # GLiNER fine-tuning recipe.
+            focal_loss_alpha=0.75,
+            focal_loss_gamma=2,
+            others_lr=1e-5,
+            weight_decay=0.01,
+            others_weight_decay=0.01,
+            lr_scheduler_type="linear",
+            warmup_ratio=0.1,
             save_strategy="no",
             fp16=False,
             use_cpu=(self.device == "cpu"),

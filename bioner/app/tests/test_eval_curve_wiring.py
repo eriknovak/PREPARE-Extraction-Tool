@@ -26,6 +26,12 @@ def test_eval_steps_negative_falls_back_to_auto(monkeypatch):
     assert f._compute_eval_steps(total_steps=168) == 9
 
 
+def test_default_learning_rate_matches_reference_recipe():
+    # Pins the reference-recipe LR — lowering it only masks a missing focal loss.
+    f = GLiNERFinetuner(run_id=1, base_model_path="x", training_data=[{}])
+    assert f.learning_rate == 5e-6
+
+
 def test_total_steps_formula():
     f = GLiNERFinetuner(
         run_id=1,
