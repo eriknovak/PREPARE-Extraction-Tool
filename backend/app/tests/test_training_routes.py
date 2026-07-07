@@ -763,6 +763,8 @@ def test_training_start_sets_total_steps(client):
 
 def test_start_training_reconciles_stale_run(client, monkeypatch):
     """A 'running' run that bioner no longer tracks must not wedge new training."""
+    from datetime import datetime, timedelta, timezone
+
     from app.services import training_service
     import app.services.bioner_client as bioner_client_mod
     from app.models_db import TrainingRun
@@ -775,6 +777,10 @@ def test_start_training_reconciles_stale_run(client, monkeypatch):
         val_ratio=0.1,
     )
     training_service.mark_running(client.session, stale.id)
+    # Age the run past the reconcile grace window (fresh runs are not probed).
+    stale.created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    client.session.add(stale)
+    client.session.commit()
 
     # bioner returns None (404 / unknown) -> the run is stale.
     monkeypatch.setattr(bioner_client_mod, "get_training_status", lambda run_id: None)

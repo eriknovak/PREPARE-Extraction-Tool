@@ -1,4 +1,3 @@
-import gc
 import json
 import logging
 import math
@@ -20,6 +19,11 @@ from transformers import TrainerCallback
 from app.core.settings import settings
 from app.interfaces import Entity
 from app.library.ner_metrics import NERMetrics
+from app.training.memory_budget import (
+    check_memory_budget,
+    ensure_memory_headroom,
+    release_freed_memory,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -466,9 +470,13 @@ class GLiNERFinetuner:
             )
 
         finally:
-            gc.collect()
+            # A stopped run must actually release its memory, or the leftovers
+            # count against the next run's budget.
+            self.training_data = []
+            self.eval_data = []
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            release_freed_memory()
 
     # -----------------------------
     # TRAINING CORE
@@ -781,6 +789,9 @@ class GLiNERFinetuner:
         print(f"[GLINER TRAINER] USING MODEL: {self.base_model_path}")
         print(f"[GLINER TRAINER] DEVICE: {self.device}")
         print("=" * 80 + "\n")
+
+        # Refuse models that can't fit before loading anything.
+        check_memory_budget(self.base_model_path)
 
         model = GLiNER.from_pretrained(
             self.base_model_path,
@@ -1103,6 +1114,7 @@ class GLiNERFinetuner:
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
                     raise KeyboardInterrupt("Training stopped by user")
+                ensure_memory_headroom()
                 # super() backpropagates the sum-reduced loss (gradient signal
                 # unchanged); only the returned/logged value is normalized.
                 loss = super().training_step(model, inputs)

@@ -648,6 +648,8 @@ export interface ActiveTrainingRun {
   run_id: number;
   dataset_ids: number[];
   status: string;
+  /** Why the run failed — set when the backend just reconciled it as dead. */
+  error_message?: string | null;
   total_steps?: number | null;
   current_step?: number | null;
   num_epochs?: number | null;

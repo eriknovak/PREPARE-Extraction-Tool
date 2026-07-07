@@ -109,12 +109,26 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const isTrainingRef = useRef(false);
   const totalEpochsRef = useRef(4);
   const totalStepsRef = useRef(0);
+  // When the last training WS event arrived — drives the stalled-run watchdog.
+  const lastEventAtRef = useRef(Date.now());
   const [activeRunId, setActiveRunId] = useState<number | null>(null);
 
   // keep a ref of isTraining so the WS reconnect logic can read it without re-subscribing
   useEffect(() => {
     isTrainingRef.current = isTraining;
   }, [isTraining]);
+
+  // Teardown + user alert for a failed run (error event or dead-run reconcile).
+  const markRunDead = (message?: string | null, suggestion?: string) => {
+    const msg = message ?? "Training stopped unexpectedly.";
+    setIsTraining(false);
+    setTrainingStatus(`Error: ${msg}`);
+    setProgress(0);
+    setCurrentStep(0);
+    setTotalSteps(0);
+    setTrainingPhase(null);
+    showAlert({ message: msg, suggestion }, "error");
+  };
 
   // ------------------ DATASETS ------------------
 
@@ -177,6 +191,8 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
         return;
       }
 
+      lastEventAtRef.current = Date.now();
+
       switch (data.type) {
         case "training_start":
           setIsTraining(true);
@@ -208,10 +224,12 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
         case "epoch_update": {
           const epoch = Number(data.epoch ?? 0);
 
-          setProgress(() => {
+          // The epoch counter ends below num_epochs under gradient
+          // accumulation — only ever move the bar forward.
+          setProgress((prev) => {
             const safeTotal = totalEpochsRef.current;
-            if (safeTotal <= 0) return 0;
-            return Math.min(100, (epoch / safeTotal) * 100);
+            if (safeTotal <= 0) return prev;
+            return Math.max(prev, Math.min(100, (epoch / safeTotal) * 100));
           });
 
           break;
@@ -247,6 +265,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
         case "completed":
           setIsTraining(false);
           setTrainingStatus(`Completed — saved to ${data.output_path ?? "unknown"}`);
+          setProgress(100);
           setCurrentStep(0);
           setTotalSteps(0);
           setTrainingPhase(null);
@@ -262,12 +281,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           break;
 
         case "error":
-          setIsTraining(false);
-          setTrainingStatus(`Error: ${data.message}`);
-          setCurrentStep(0);
-          setTotalSteps(0);
-          setTrainingPhase(null);
-          showAlert({ message: data.message, suggestion: data.suggestion }, "error");
+          markRunDead(data.message, data.suggestion);
           break;
       }
     };
@@ -341,6 +355,12 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
+        if (run.status === "failed") {
+          // Backend just reconciled the run as dead — surface the reason.
+          markRunDead(run.error_message);
+          return;
+        }
+
         setActiveRunId(run.run_id);
         setIsTraining(true);
         setTrainingStatus("Training in progress…");
@@ -374,6 +394,33 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // ------------------ STALLED-RUN WATCHDOG ------------------
+
+  // The trainer can die without a final event (e.g. OOM-killed worker). When
+  // the WS goes quiet mid-run, ask the backend to verify the run with bioner.
+  useEffect(() => {
+    if (!token) return;
+    const STALL_MS = 90_000;
+
+    const timer = setInterval(() => {
+      if (!isTrainingRef.current) return;
+      if (Date.now() - lastEventAtRef.current < STALL_MS) return;
+      // Back off until the next full quiet period before re-verifying.
+      lastEventAtRef.current = Date.now();
+      getActiveRun()
+        .then((run) => {
+          if (run?.status === "failed") markRunDead(run.error_message);
+        })
+        .catch(() => {
+          // Best-effort; retried next quiet period.
+        });
+    }, 30_000);
+
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   // ------------------ TRAINING ------------------

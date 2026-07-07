@@ -216,147 +216,159 @@ const TrainingView = () => {
 
       {/* TRAINING CONFIG */}
       <Card title="Training configuration">
-        {/* Model selector */}
-        <div className={styles.field}>
-          <label className={styles.field__label} htmlFor="base-model-select">
-            Base model
-          </label>
+        <div className={styles.configGrid}>
+          <div className={styles.configGrid__main}>
+            {/* Model selector */}
+            <div className={styles.field}>
+              <label className={styles.field__label} htmlFor="base-model-select">
+                Base model
+              </label>
 
-          <Select
-            id="base-model-select"
-            value={useCustomModel ? "custom" : baseModel}
-            onValueChange={(v) => {
-              if (v === "custom") {
-                setUseCustomModel(true);
-              } else {
-                setUseCustomModel(false);
-                setBaseModel(v);
-              }
-            }}
-            options={baseModelOptions}
-            fullWidth={false}
-          />
-
-          {useCustomModel ? (
-            <>
-              <input
-                id="custom-model-input"
-                type="text"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder="e.g. urchade/gliner_medium-v2.1 or /model/gliner/my-model"
-                className={styles.input}
-                style={{ marginTop: "var(--space-2)" }}
+              <Select
+                id="base-model-select"
+                value={useCustomModel ? "custom" : baseModel}
+                onValueChange={(v) => {
+                  if (v === "custom") {
+                    setUseCustomModel(true);
+                  } else {
+                    setUseCustomModel(false);
+                    setBaseModel(v);
+                  }
+                }}
+                options={baseModelOptions}
+                fullWidth={false}
               />
-              <p className={styles.warning} role="alert">
-                ⚠ Advanced: custom base models must be GLiNER-compatible. An incompatible model will fail to train.
-              </p>
-            </>
-          ) : (
-            selectedBaseline && (
-              <div className={styles.modelInfo}>
-                <p className={styles.modelInfo__desc}>{selectedBaseline.description}</p>
-                <dl className={styles.modelInfo__specs}>
-                  <div className={styles.modelInfo__spec}>
-                    <dt className={styles.modelInfo__term}>Model</dt>
-                    <dd className={styles.modelInfo__value}>
-                      <code className={styles.code}>{selectedBaseline.value}</code>
-                    </dd>
+
+              {useCustomModel ? (
+                <>
+                  <input
+                    id="custom-model-input"
+                    type="text"
+                    value={customModel}
+                    onChange={(e) => setCustomModel(e.target.value)}
+                    placeholder="e.g. urchade/gliner_medium-v2.1 or /model/gliner/my-model"
+                    className={styles.input}
+                    style={{ marginTop: "var(--space-2)" }}
+                  />
+                  <p className={styles.warning} role="alert">
+                    ⚠ Advanced: custom base models must be GLiNER-compatible. An incompatible model will fail to train.
+                  </p>
+                </>
+              ) : (
+                selectedBaseline && (
+                  <div className={styles.modelInfo}>
+                    <p className={styles.modelInfo__desc}>{selectedBaseline.description}</p>
+                    <dl className={styles.modelInfo__specs}>
+                      <div className={styles.modelInfo__spec}>
+                        <dt className={styles.modelInfo__term}>Model</dt>
+                        <dd className={styles.modelInfo__value}>
+                          <code className={styles.code}>{selectedBaseline.value}</code>
+                        </dd>
+                      </div>
+                      <div className={styles.modelInfo__spec}>
+                        <dt className={styles.modelInfo__term}>Parameters</dt>
+                        <dd className={styles.modelInfo__value}>{selectedBaseline.params}</dd>
+                      </div>
+                      <div className={styles.modelInfo__spec}>
+                        <dt className={styles.modelInfo__term}>Training VRAM</dt>
+                        <dd className={styles.modelInfo__value} title={VRAM_TOOLTIP}>
+                          ~{selectedBaseline.vramGB} GB
+                        </dd>
+                      </div>
+                    </dl>
                   </div>
-                  <div className={styles.modelInfo__spec}>
-                    <dt className={styles.modelInfo__term}>Parameters</dt>
-                    <dd className={styles.modelInfo__value}>{selectedBaseline.params}</dd>
-                  </div>
-                  <div className={styles.modelInfo__spec}>
-                    <dt className={styles.modelInfo__term}>Training VRAM</dt>
-                    <dd className={styles.modelInfo__value} title={VRAM_TOOLTIP}>
-                      ~{selectedBaseline.vramGB} GB
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            )
-          )}
-        </div>
-
-        {/* Train / Eval split */}
-        <div className={styles.field}>
-          <p className={styles.field__label}>Train / Eval split</p>
-
-          <Select
-            value={String(valSplitRatio)}
-            onValueChange={(v) => setValSplitRatio(Number(v))}
-            fullWidth={false}
-            options={SPLIT_OPTIONS}
-            disabled={hasEvalDatasets}
-          />
-          {hasEvalDatasets && <p className={styles.hint}>Ignored while evaluation datasets are selected.</p>}
-        </div>
-
-        {/* Advanced hyperparameters */}
-        <div className={styles.field}>
-          <button
-            type="button"
-            className={styles["advanced-toggle"]}
-            onClick={() => setShowAdvanced((s) => !s)}
-            aria-expanded={showAdvanced}
-          >
-            {showAdvanced ? "▾" : "▸"} Advanced (hyperparameters)
-          </button>
-
-          {showAdvanced && (
-            <div className={styles.hyperparams}>
-              <label className={styles.hyperparam}>
-                <span className={styles.field__label}>Epochs</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={numEpochs}
-                  onChange={(e) => setNumEpochs(Math.max(1, Math.round(Number(e.target.value) || 1)))}
-                  className={styles.input}
-                />
-              </label>
-
-              <label className={styles.hyperparam}>
-                <span className={styles.field__label}>Learning rate</span>
-                <input
-                  type="number"
-                  min={0}
-                  step="0.000001"
-                  value={learningRate}
-                  onChange={(e) => setLearningRate(Number(e.target.value))}
-                  className={styles.input}
-                />
-              </label>
-
-              <label className={styles.hyperparam}>
-                <span className={styles.field__label}>Batch size</span>
-                <input
-                  type="number"
-                  min={1}
-                  step={1}
-                  value={trainBatchSize}
-                  onChange={(e) => setTrainBatchSize(Math.max(1, Math.round(Number(e.target.value) || 1)))}
-                  className={styles.input}
-                />
-              </label>
+                )
+              )}
             </div>
-          )}
-        </div>
+          </div>
 
-        {/* Actions */}
-        <div className={styles.actions}>
-          <Button variant="primary" onClick={startTraining} disabled={isTraining || trainingDatasetIds.length === 0}>
-            Start
-          </Button>
-          <Button variant="danger" onClick={stopTraining} disabled={!isTraining}>
-            Stop
-          </Button>
+          <div className={styles.runPanel}>
+            {/* Train / Eval split */}
+            <div className={styles.field}>
+              <p className={styles.field__label}>Train / Eval split</p>
 
-          {trainingStatus && (
-            <p className={classNames(styles.status, { [styles["status--active"]]: isTraining })}>{trainingStatus}</p>
-          )}
+              <Select
+                value={String(valSplitRatio)}
+                onValueChange={(v) => setValSplitRatio(Number(v))}
+                fullWidth={false}
+                options={SPLIT_OPTIONS}
+                disabled={hasEvalDatasets}
+              />
+              {hasEvalDatasets && <p className={styles.hint}>Ignored while evaluation datasets are selected.</p>}
+            </div>
+
+            {/* Advanced hyperparameters */}
+            <div className={styles.field}>
+              <button
+                type="button"
+                className={styles["advanced-toggle"]}
+                onClick={() => setShowAdvanced((s) => !s)}
+                aria-expanded={showAdvanced}
+              >
+                {showAdvanced ? "▾" : "▸"} Advanced (hyperparameters)
+              </button>
+
+              {showAdvanced && (
+                <div className={styles.hyperparams}>
+                  <label className={styles.hyperparam}>
+                    <span className={styles.field__label}>Epochs</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={numEpochs}
+                      onChange={(e) => setNumEpochs(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                      className={styles.input}
+                    />
+                  </label>
+
+                  <label className={styles.hyperparam}>
+                    <span className={styles.field__label}>Learning rate</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.000001"
+                      value={learningRate}
+                      onChange={(e) => setLearningRate(Number(e.target.value))}
+                      className={styles.input}
+                    />
+                  </label>
+
+                  <label className={styles.hyperparam}>
+                    <span className={styles.field__label}>Batch size</span>
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={trainBatchSize}
+                      onChange={(e) => setTrainBatchSize(Math.max(1, Math.round(Number(e.target.value) || 1)))}
+                      className={styles.input}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className={styles.actions}>
+              <Button
+                variant="primary"
+                onClick={startTraining}
+                disabled={isTraining || trainingDatasetIds.length === 0}
+              >
+                Start
+              </Button>
+              <Button variant="danger" onClick={stopTraining} disabled={!isTraining}>
+                Stop
+              </Button>
+
+              {trainingStatus && (
+                <p className={classNames(styles.status, { [styles["status--active"]]: isTraining })}>
+                  {trainingStatus}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       </Card>
 

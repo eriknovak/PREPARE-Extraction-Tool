@@ -34,6 +34,13 @@ class Settings(BaseSettings):
             Set >= 1 to force a fixed interval (1 = evaluate every step for a
             fully dense curve; each eval pass reads the whole validation split,
             which on CPU can take several times longer than a train step).
+        BIONER_TRAIN_OVERHEAD_MB (int): Pre-flight estimate of training memory
+            beyond ``3.5 x weight bytes`` (activations, tokenizer, runtime).
+            Lowering it admits borderline models that may then abort mid-run.
+        BIONER_TRAIN_MIN_FREE_MB (int): Abort an in-flight run when available
+            memory drops below this. Must exceed one training step's transient
+            allocation (hundreds of MB), or the OS OOM-kills the process before
+            the guard can abort cleanly.
         TRAINING_STOP_JOIN_TIMEOUT (float): Seconds to wait for a stop-requested
             training worker to wind down before a new run is reported as still
             stopping (409 TRAINING_STOPPING). Kept short so the API stays
@@ -45,6 +52,8 @@ class Settings(BaseSettings):
     BIONER_TRAIN_CONTEXT_PAD: int = 64
     BIONER_TRAIN_MICRO_BATCH: int = 2
     BIONER_TRAIN_EVAL_STEPS: int = 0
+    BIONER_TRAIN_OVERHEAD_MB: int = 1024
+    BIONER_TRAIN_MIN_FREE_MB: int = 512
 
     TRAINING_STOP_JOIN_TIMEOUT: float = 5.0
 

@@ -906,6 +906,8 @@ class ActiveTrainingRunResponse(BaseModel):
     run_id: int
     dataset_ids: List[int] = Field(default_factory=list)
     status: str
+    # Set when the run was just reconciled as dead (trainer vanished).
+    error_message: Optional[str] = None
     total_steps: Optional[int] = None
     current_step: Optional[int] = None
     num_epochs: Optional[int] = None

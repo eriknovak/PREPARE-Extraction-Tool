@@ -133,6 +133,11 @@ services:
     image: "${DOCKER_IMAGE_BIONER:-bioner}:${TAG:-latest}"
     container_name: PREPARE-BIONER
     restart: unless-stopped
+    # Contain a runaway training: OOM-kill it inside this container instead of
+    # starving the whole Docker VM. memswap_limit == mem_limit disables swap
+    # so a cap hit kills fast instead of thrashing the engine.
+    mem_limit: ${BIONER_MEM_LIMIT:-12g}
+    memswap_limit: ${BIONER_MEM_LIMIT:-12g}
     expose:
       - "${BIONER_PORT:-5600}"
     # deploy:
@@ -170,6 +175,9 @@ services:
       - BIONER_TRAIN_MICRO_BATCH=${BIONER_TRAIN_MICRO_BATCH:-2}
       # Eval-loss interval in optimizer steps (0 = auto ~18 points; 1 = every step)
       - BIONER_TRAIN_EVAL_STEPS=${BIONER_TRAIN_EVAL_STEPS:-0}
+      # Memory-guard tuning: pre-flight overhead estimate + mid-run abort floor
+      - BIONER_TRAIN_OVERHEAD_MB=${BIONER_TRAIN_OVERHEAD_MB:-1024}
+      - BIONER_TRAIN_MIN_FREE_MB=${BIONER_TRAIN_MIN_FREE_MB:-512}
     healthcheck:
       test:
         ["CMD", "curl", "-f", "http://localhost:${BIONER_PORT:-5600}/health"]

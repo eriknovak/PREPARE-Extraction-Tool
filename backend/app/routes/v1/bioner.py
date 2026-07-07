@@ -1,6 +1,6 @@
 import os
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import (
@@ -877,6 +877,43 @@ def _bioner_conflict_detail(resp: requests.Response) -> dict:
     }
 
 
+TRAINER_DIED_MESSAGE = (
+    "Training stopped unexpectedly — the training process was terminated, most "
+    "likely because the computer ran out of memory (RAM). Try a smaller base "
+    "model, a lower batch size (under Advanced), or fewer training records; if "
+    "you run Docker Desktop, allocating it more memory also helps."
+)
+
+# Runs younger than this are never probed: bioner registers a run shortly
+# after start, and probing inside that window would misread it as dead.
+RECONCILE_GRACE_SECONDS = 120
+
+
+def _reconcile_run_liveness(db: Session, run: TrainingRun) -> bool:
+    """Verify a DB-active run is still alive on bioner; mark it failed if not.
+
+    Returns False when the run was just marked failed. bioner being
+    unreachable means *unknown*, not dead — the run is left untouched.
+    """
+    if run.status not in ("pending", "running"):
+        return True
+    created = run.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) - created < timedelta(
+        seconds=RECONCILE_GRACE_SECONDS
+    ):
+        return True
+    try:
+        snapshot = bioner_client.get_training_status(run.id)
+    except requests.RequestException:
+        return True
+    if snapshot is not None and snapshot.get("status") == "running":
+        return True
+    training_service.fail_run(db, run.id, TRAINER_DIED_MESSAGE)
+    return False
+
+
 @router.post("/training/start", response_model=TrainingStartResponse)
 def start_training(
     req: GLiNERTrainingRequest,
@@ -907,17 +944,7 @@ def start_training(
     # bioner whether each still-active run is genuinely running; mark the rest
     # failed so a new run can start.
     for run in training_service.get_active_runs_for_datasets(db, train_ids):
-        try:
-            snapshot = bioner_client.get_training_status(run.id)
-        except requests.RequestException:
-            # bioner unreachable -> can't confirm; leave the run active (the
-            # start call below will fail loudly if bioner is genuinely down).
-            continue
-        still_running = snapshot is not None and snapshot.get("status") == "running"
-        if not still_running:
-            training_service.fail_run(
-                db, run.id, "Stale run cleared: trainer was no longer running."
-            )
+        _reconcile_run_liveness(db, run)
 
     # Reject a second genuinely-concurrent run touching any of the datasets.
     if training_service.has_active_run_for_datasets(db, train_ids):
@@ -1158,6 +1185,17 @@ def active_run(
     train_ids = training_service.get_dataset_ids(db, run.id, role="train") or [
         run.dataset_id
     ]
+
+    # The trainer may have died without a final event (e.g. OOM-killed);
+    # surface the failure once so the Monitor shows why instead of a stuck run.
+    if not _reconcile_run_liveness(db, run):
+        db.refresh(run)
+        return ActiveTrainingRunResponse(
+            run_id=run.id,
+            dataset_ids=train_ids,
+            status="failed",
+            error_message=run.error_message,
+        )
     metrics = training_service.get_run_metrics(db, run.id)
     ordered = sorted(
         metrics,
