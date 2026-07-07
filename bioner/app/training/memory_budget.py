@@ -168,10 +168,17 @@ def ensure_memory_headroom() -> None:
 
     Called between training steps; no-op where memory can't be read. The
     watermark must exceed one step's transient allocation, or the OS
-    OOM-kills the process before this can abort cleanly.
+    OOM-kills the process before this can abort cleanly. A first low
+    reading only triggers a trim + re-measure, so a transient dip (e.g.
+    another service spiking) can't abort a run that would survive.
     """
+    watermark = settings.BIONER_TRAIN_MIN_FREE_MB * _MIB
     available = available_memory_bytes()
-    if available is None or available >= settings.BIONER_TRAIN_MIN_FREE_MB * _MIB:
+    if available is None or available >= watermark:
+        return
+    release_freed_memory()
+    available = available_memory_bytes()
+    if available is None or available >= watermark:
         return
     raise MemoryBudgetError(
         f"Training aborted: the machine is nearly out of memory "

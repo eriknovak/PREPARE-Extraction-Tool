@@ -59,6 +59,15 @@ def test_headroom_guard_aborts_when_memory_is_nearly_gone(monkeypatch):
         ensure_memory_headroom()
 
 
+def test_headroom_guard_survives_a_transient_dip(monkeypatch):
+    # First reading low, second (after trim + re-measure) fine -> no abort.
+    readings = iter([int(0.4 * GIB), 4 * GIB])
+    monkeypatch.setattr(
+        memory_budget, "available_memory_bytes", lambda: next(readings)
+    )
+    ensure_memory_headroom()
+
+
 def test_headroom_guard_passes_with_room_or_unknown(monkeypatch):
     monkeypatch.setattr(memory_budget, "available_memory_bytes", lambda: 4 * GIB)
     ensure_memory_headroom()
