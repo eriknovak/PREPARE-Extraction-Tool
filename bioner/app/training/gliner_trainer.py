@@ -293,22 +293,20 @@ class GLiNERDataset(TorchDataset):
         }
 
 
-def _per_element_mean_loss(summed_loss, numel):
-    """Normalize a sum-reduced GLiNER loss to a per-element mean for reporting.
+def _per_positive_mean_loss(summed_loss, num_positives):
+    """Normalize a sum-reduced GLiNER loss per positive span for reporting.
 
-    GLiNER's ``Trainer`` defaults to ``loss_reduction='sum'``, so the model
-    returns the loss summed over every score element
-    (``batch * seq_len * span_width * num_classes``) — logged values land in the
-    thousands-to-hundreds-of-thousands range. Dividing by the score-tensor
-    element count yields what ``loss_reduction='mean'`` would report, without
-    touching the gradient signal.
+    GLiNER's ``Trainer`` backprops the loss summed over every score element.
+    A per-element mean is useless with focal loss: >99.9% of elements are easy
+    negatives whose contribution focal loss shrinks toward zero, flattening the
+    curve to ~1e-3. Dividing by the positive-span count instead (the standard
+    focal-loss normalizer, cf. RetinaNet) keeps the curve in a familiar range
+    without touching the gradient signal.
 
-    Accepts a tensor or a plain float and returns the same kind. Guards against
-    empty/degenerate batches (``numel == 0``) by returning the input unchanged.
+    Accepts a tensor or a plain float and returns the same kind. Batches with
+    no positive spans divide by 1.
     """
-    if not numel:
-        return summed_loss
-    return summed_loss / numel
+    return summed_loss / max(num_positives, 1)
 
 
 # -----------------------------
@@ -1015,10 +1013,6 @@ class GLiNERFinetuner:
             output_dir=output_dir,
             num_train_epochs=self.num_epochs,
             learning_rate=self.learning_rate,
-            # Focal loss (not the default plain BCE) is required: the span
-            # target grid is >99.9% negative and BCE collapses the span head
-            # into scoring everything positive. Values mirror the reference
-            # GLiNER fine-tuning recipe.
             focal_loss_alpha=0.75,
             focal_loss_gamma=2,
             others_lr=1e-5,
@@ -1100,30 +1094,26 @@ class GLiNERFinetuner:
                 )
 
         class _TrackingTrainer(Trainer):
-            # Number of score elements the most recent (summed) loss was taken
-            # over, captured in compute_loss so the *reported* loss can be
-            # normalized to a per-element mean without changing backprop.
-            _last_loss_numel: int = 0
+            # Positive-span count of the most recent batch, captured in
+            # compute_loss so the *reported* loss can be normalized per
+            # positive span without changing backprop.
+            _last_positive_count: int = 0
 
             def training_step(self, model, inputs, num_items_in_batch=None):
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
                     raise KeyboardInterrupt("Training stopped by user")
                 # super() backpropagates the sum-reduced loss (gradient signal
-                # unchanged) and returns that summed scalar for HF to log. We
-                # only normalize the *returned*/logged value to a per-element
-                # mean so the streamed/persisted curve is in a sane range.
+                # unchanged); only the returned/logged value is normalized.
                 loss = super().training_step(model, inputs)
-                return _per_element_mean_loss(loss, self._last_loss_numel)
+                return _per_positive_mean_loss(loss, self._last_positive_count)
 
             def compute_loss(self, model, inputs, *args, **kwargs):
                 if finetuner._stop_event.is_set():
                     self.control.should_training_stop = True
                     raise KeyboardInterrupt("Stopped before loss computation")
                 # Mirror gliner's Trainer.compute_loss forward exactly so the
-                # returned (summed) loss — and thus backprop — is unchanged,
-                # while also capturing the score-tensor element count used to
-                # normalize the reported loss (see training_step / log).
+                # returned (summed) loss — and thus backprop — is unchanged.
                 outputs = model(
                     alpha=self.args.focal_loss_alpha,
                     gamma=self.args.focal_loss_gamma,
@@ -1134,25 +1124,36 @@ class GLiNERFinetuner:
                     masking=self.args.masking,
                     **inputs,
                 )
-                logits = outputs.logits
-                self._last_loss_numel = int(logits.numel()) if logits is not None else 0
+                labels = inputs.get("labels")
+                self._last_positive_count = (
+                    int((labels > 0).sum().item()) if labels is not None else 0
+                )
                 return outputs.loss
 
             def prediction_step(
                 self, model, inputs, prediction_loss_only, ignore_keys=None
             ):
-                # Mirror gliner's Trainer.prediction_step (model defaults to a
-                # sum-reduced loss here too). Eval does no backprop, so we
-                # normalize the reported eval loss to the same per-element mean
-                # scale as the training curve.
+                # Compute the eval loss with the same (focal) loss args as
+                # training — the model's bare forward defaults to plain BCE —
+                # and normalize it to the same per-positive scale, so the two
+                # curves share one objective and scale.
                 with torch.no_grad():
                     with self.compute_loss_context_manager():
-                        outputs = model(**inputs)
+                        outputs = model(
+                            alpha=self.args.focal_loss_alpha,
+                            gamma=self.args.focal_loss_gamma,
+                            prob_margin=self.args.focal_loss_prob_margin,
+                            label_smoothing=self.args.label_smoothing,
+                            reduction=self.args.loss_reduction,
+                            negatives=self.args.negatives,
+                            masking=self.args.masking,
+                            **inputs,
+                        )
                     loss = outputs.loss
                     logits = outputs.logits
                     labels = inputs["labels"]
-                if loss is not None and logits is not None and logits.numel():
-                    loss = _per_element_mean_loss(loss, int(logits.numel()))
+                if loss is not None and labels is not None:
+                    loss = _per_positive_mean_loss(loss, int((labels > 0).sum().item()))
                 if prediction_loss_only:
                     return (loss, None, None)
                 return (loss, logits, labels)
