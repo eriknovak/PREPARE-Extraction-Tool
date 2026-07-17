@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useAuth } from "@hooks/useAuth";
-import { useToast } from "@hooks/useToast";
+import { useToastApi } from "@hooks/useToast";
 import { ApiError } from "@api/client";
 import {
   getActiveRun,
@@ -43,7 +43,9 @@ const describeStartError = (err: unknown): { message: string; suggestion?: strin
 
 /** Provides all Monitor state + actions to the page and its views. */
 const MonitorProvider = ({ children }: { children: ReactNode }) => {
-  const toast = useToast();
+  // Stable imperative API — toast state lives in ToastProvider (above this
+  // provider) so showing/dismissing a toast never rerenders Monitor consumers.
+  const toast = useToastApi();
 
   const showAlert = (
     payload: { message?: string; detail?: string; suggestion?: string },

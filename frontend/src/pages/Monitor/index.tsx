@@ -1,5 +1,4 @@
 import Layout from "@components/Layout";
-import { ToastContainer } from "@components/Toast/ToastContainer";
 import { usePageTitle } from "@hooks/usePageTitle";
 
 import { useMonitor } from "./hooks/useMonitor";
@@ -11,7 +10,7 @@ import styles from "./styles.module.css";
 
 /** Page body — consumes the shared Monitor state and renders the active view. */
 const MonitorContent = () => {
-  const { activeView, toast } = useMonitor();
+  const { activeView } = useMonitor();
 
   return (
     <div className={styles.page}>
@@ -20,8 +19,6 @@ const MonitorContent = () => {
       <ViewTabs />
 
       {activeView === "models" ? <ModelsView /> : <TrainingView />}
-
-      <ToastContainer toasts={toast.toasts} onDismiss={toast.dismissToast} duration={5000} />
     </div>
   );
 };
