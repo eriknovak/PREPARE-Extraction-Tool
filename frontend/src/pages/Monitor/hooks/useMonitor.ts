@@ -28,7 +28,6 @@ export interface MonitorContextValue {
   currentStep: number;
   totalSteps: number;
   trainingMetrics: TrainingMetric[];
-  trainingStatus: string;
   /** Live pre-training phase ("loading" | "baseline" | "init" | "training"),
    *  or null when no run is in flight. Drives the progress phase stepper. */
   trainingPhase: string | null;
