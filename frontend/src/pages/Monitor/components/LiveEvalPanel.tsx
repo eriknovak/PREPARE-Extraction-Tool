@@ -41,7 +41,7 @@ const LiveEvalPanel = ({ modelId }: Props) => {
       const msg = err instanceof Error ? err.message : "";
       const isConflict = msg.includes("already running") || msg.startsWith("HTTP 409");
       toast.showToast(
-        isConflict ? "An extraction or live-eval job is already running" : "Failed to start live evaluation",
+        isConflict ? "An extraction or live-eval job is already running" : msg || "Failed to start live evaluation",
         "error"
       );
     }

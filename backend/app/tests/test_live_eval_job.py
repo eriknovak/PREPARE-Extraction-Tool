@@ -16,6 +16,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test")
 from datetime import datetime, timezone
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine, select
 
@@ -180,7 +181,11 @@ def test_worker_writes_only_source_term_ex_and_computes_metrics(engine, monkeypa
 
     activate_calls = []
     monkeypatch.setattr(live_eval.requests, "post", fake_post)
-    monkeypatch.setattr(live_eval, "_activate_on_bioner", lambda path: activate_calls.append(path))
+    monkeypatch.setattr(
+        live_eval.bioner_client,
+        "activate_model",
+        lambda path: activate_calls.append(path),
+    )
 
     job_id = _make_job(engine, ids["dataset_id"], ids["eval_model_id"])
     live_eval.run_live_eval_job(
@@ -235,7 +240,11 @@ def test_worker_restores_active_model_on_ner_failure(engine, monkeypatch):
 
     activate_calls = []
     monkeypatch.setattr(live_eval.requests, "post", fake_post)
-    monkeypatch.setattr(live_eval, "_activate_on_bioner", lambda path: activate_calls.append(path))
+    monkeypatch.setattr(
+        live_eval.bioner_client,
+        "activate_model",
+        lambda path: activate_calls.append(path),
+    )
 
     job_id = _make_job(engine, ids["dataset_id"], ids["eval_model_id"])
     live_eval.run_live_eval_job(
@@ -252,3 +261,179 @@ def test_worker_restores_active_model_on_ner_failure(engine, monkeypatch):
 
     # Even on failure, the previously-active model is restored in the finally block.
     assert activate_calls == ["/models/eval", ids["prev_path"]]
+
+
+class _FakeErrorResponse:
+    """Minimal requests.Response stand-in carrying a JSON error body."""
+
+    def __init__(self, payload, status_code=400):
+        self._payload = payload
+        self.status_code = status_code
+
+    def json(self):
+        return self._payload
+
+
+def test_worker_marks_job_failed_when_model_cannot_be_activated(engine, monkeypatch):
+    """bioner rejecting the hot-swap (e.g. artifact deleted from disk -> 400
+    INVALID_MODEL) must fail the job with bioner's message, not leave it running."""
+    ids = _seed(engine)
+
+    activate_calls = []
+
+    def fake_activate(path):
+        activate_calls.append(path)
+        if len(activate_calls) == 1:
+            raise live_eval.requests.HTTPError(
+                "400 Client Error: Bad Request",
+                response=_FakeErrorResponse(
+                    {
+                        "detail": {
+                            "error": "INVALID_MODEL",
+                            "message": "Model could not be found or loaded: /models/eval",
+                        }
+                    }
+                ),
+            )
+
+    monkeypatch.setattr(live_eval.bioner_client, "activate_model", fake_activate)
+
+    job_id = _make_job(engine, ids["dataset_id"], ids["eval_model_id"])
+    live_eval.run_live_eval_job(
+        job_id=job_id,
+        model_id=ids["eval_model_id"],
+        dataset_id=ids["dataset_id"],
+        labels=["Drug"],
+    )
+
+    with Session(engine) as s:
+        job = s.get(LiveEvalJob, job_id)
+        assert job.status == "failed"
+        assert "Model could not be found or loaded" in job.error_message
+
+    # Activation failed, but the restore in the finally block still runs.
+    assert activate_calls == ["/models/eval", ids["prev_path"]]
+
+
+def test_worker_marks_job_failed_on_unexpected_error(engine, monkeypatch):
+    """Regression: a non-requests exception used to escape the worker and leave
+    the job stuck in 'running' forever (frontend polls a zombie job)."""
+    ids = _seed(engine)
+
+    def fake_activate(path):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(live_eval.bioner_client, "activate_model", fake_activate)
+
+    job_id = _make_job(engine, ids["dataset_id"], ids["eval_model_id"])
+    live_eval.run_live_eval_job(
+        job_id=job_id,
+        model_id=ids["eval_model_id"],
+        dataset_id=ids["dataset_id"],
+        labels=["Drug"],
+    )
+
+    with Session(engine) as s:
+        job = s.get(LiveEvalJob, job_id)
+        assert job.status == "failed"
+        assert "boom" in job.error_message
+
+
+# ================================================
+# /live-eval/start fail-fast (route-level)
+# ================================================
+
+
+@pytest.fixture
+def client(engine):
+    """TestClient over the seeded in-memory DB with auth/session overridden."""
+    from app.core.database import get_session
+    from app.main import app
+    from app.routes.v1.auth import get_current_user
+
+    ids = _seed(engine)
+    with Session(engine) as session:
+        user = session.exec(select(User)).first()
+
+        def _get_session_override():
+            yield session
+
+        app.dependency_overrides[get_session] = _get_session_override
+        app.dependency_overrides[get_current_user] = lambda: user
+        c = TestClient(app)
+        c.ids = ids
+        yield c
+        app.dependency_overrides.clear()
+
+
+def _scan(paths):
+    return {
+        "current_engine": "gliner",
+        "default_model": "/models/model",
+        "models_dir": "/models",
+        "models": [
+            {
+                "dir_name": p.rsplit("/", 1)[-1],
+                "path": p,
+                "engine": "gliner",
+                "is_adapter": False,
+                "name": p.rsplit("/", 1)[-1],
+                "version": "1",
+            }
+            for p in paths
+        ],
+    }
+
+
+def test_start_rejects_model_whose_artifact_is_gone(client, monkeypatch):
+    """A Model row can outlive its on-disk folder; starting a live eval against
+    it must 400 immediately instead of failing deep in the background worker."""
+    monkeypatch.setattr(
+        live_eval.bioner_client, "get_available_models", lambda: _scan(["/models/prev"])
+    )
+    resp = client.post(
+        "/api/v1/bioner/live-eval/start",
+        json={
+            "model_id": client.ids["eval_model_id"],
+            "dataset_id": client.ids["dataset_id"],
+        },
+    )
+    assert resp.status_code == 400
+    assert "no longer exists" in resp.json()["detail"]
+
+
+def test_start_returns_503_when_bioner_scan_unreachable(client, monkeypatch):
+    def _raise():
+        raise live_eval.requests.ConnectionError("bioner down")
+
+    monkeypatch.setattr(live_eval.bioner_client, "get_available_models", _raise)
+    resp = client.post(
+        "/api/v1/bioner/live-eval/start",
+        json={
+            "model_id": client.ids["eval_model_id"],
+            "dataset_id": client.ids["dataset_id"],
+        },
+    )
+    assert resp.status_code == 503
+
+
+def test_start_accepts_model_with_existing_artifact(client, monkeypatch):
+    monkeypatch.setattr(
+        live_eval.bioner_client,
+        "get_available_models",
+        lambda: _scan(["/models/eval", "/models/prev"]),
+    )
+    worker_calls = []
+    monkeypatch.setattr(live_eval, "run_live_eval_job", lambda **kw: worker_calls.append(kw))
+    resp = client.post(
+        "/api/v1/bioner/live-eval/start",
+        json={
+            "model_id": client.ids["eval_model_id"],
+            "dataset_id": client.ids["dataset_id"],
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "pending"
+    assert body["total"] == 1
+    assert len(worker_calls) == 1

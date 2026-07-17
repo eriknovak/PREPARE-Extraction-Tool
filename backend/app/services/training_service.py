@@ -4,11 +4,14 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import requests
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, func, select
 
 from app.models_db import (
     AppSettings,
     Evaluation,
+    ExtractionJob,
+    LiveEvalJob,
     Model,
     ModelTrainRecordLink,
     TrainingMetric,
@@ -668,6 +671,36 @@ def delete_run(db: Session, run_id: int) -> bool:
     return True
 
 
+def delete_model(db: Session, model: Model) -> None:
+    """Delete a Model row and every DB reference that would block it.
+
+    ``ExtractionJob.model_id`` has no ON DELETE clause and is non-nullable, so
+    the model's extraction/live-eval job-history rows are deleted with it. A
+    TrainingRun that produced the model is kept as history with its model link
+    cleared (matching runs whose model was deleted before this endpoint existed).
+    Evaluation and SourceTermEx rows are removed by the ORM cascade.
+    """
+    for job in db.exec(
+        select(ExtractionJob).where(ExtractionJob.model_id == model.id)
+    ).all():
+        db.delete(job)
+    for job in db.exec(
+        select(LiveEvalJob).where(LiveEvalJob.model_id == model.id)
+    ).all():
+        db.delete(job)
+    for link in db.exec(
+        select(ModelTrainRecordLink).where(ModelTrainRecordLink.model_id == model.id)
+    ).all():
+        db.delete(link)
+    run = model.training_run
+    if run is not None:
+        run.model_id = None
+        db.add(run)
+    db.flush()
+    db.delete(model)
+    db.commit()
+
+
 # ---------------------------------------------------------------------------
 # On-disk model discovery / reconciliation
 # ---------------------------------------------------------------------------
@@ -735,7 +768,15 @@ def discover_models(db: Session) -> dict:
         for row in rows:
             p = _norm_path(row.path)
             if p.startswith(prefix) and p not in scanned_paths:
-                db.delete(row)
+                # A row can still be referenced by an ExtractionJob (no ON DELETE
+                # clause on that FK, unlike the other model_id references) even
+                # though its folder is gone from disk. Skip it rather than let
+                # the FK violation crash the whole reconcile for every model.
+                try:
+                    with db.begin_nested():
+                        db.delete(row)
+                except IntegrityError:
+                    pass
         db.commit()
 
     return {

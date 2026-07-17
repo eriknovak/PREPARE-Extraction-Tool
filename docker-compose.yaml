@@ -67,8 +67,9 @@ services:
     image: "${DOCKER_IMAGE_BACKEND?Variable not set}:${TAG-latest}"
     container_name: PREPARE-BACKEND
     restart: unless-stopped
-    expose:
-      - "8000"
+    ports:
+      # Loopback-only publish so a host-run Vite dev server (npm run dev) can proxy /api
+      - "127.0.0.1:8000:8000"
     networks:
       - prepare-public
       - default

@@ -39,7 +39,6 @@ from app.models_db import (
     SourceTermEx,
 )
 from app.routes.v1.auth import get_current_user
-from app.routes.v1.bioner import _activate_on_bioner
 from app.schemas import (
     LiveEvalJobStartResponse,
     LiveEvalJobStatusResponse,
@@ -47,7 +46,7 @@ from app.schemas import (
     MessageOutput,
 )
 import app.services.extraction_lock as extraction_lock
-from app.services import training_service
+from app.services import bioner_client, training_service
 
 router = APIRouter(tags=["BioNER"])
 
@@ -176,6 +175,36 @@ def _compute_metrics(
 # ================================================
 
 
+def _ensure_model_artifact(model: Model) -> None:
+    """Fail fast when the model's on-disk artifact no longer exists.
+
+    A ``Model`` row can outlive its folder (e.g. the folder was deleted but an
+    ExtractionJob reference keeps the row alive through rescans); activating it
+    would fail deep in the background worker. Only paths under bioner's scanned
+    models dir are checked — anything else (HF ids) is validated at activation.
+    """
+    try:
+        scan = bioner_client.get_available_models()
+    except requests.RequestException:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extraction service unavailable",
+        )
+    models_dir = (scan.get("models_dir") or "").rstrip("/")
+    path = model.path.rstrip("/")
+    if not models_dir or not path.startswith(models_dir + "/"):
+        return
+    scanned = {m["path"].rstrip("/") for m in scan.get("models") or []}
+    if path not in scanned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Model artifact no longer exists on disk: {model.path}. "
+                "Rescan models and pick an existing model."
+            ),
+        )
+
+
 def _owned_dataset(db: Session, dataset_id: int, current_user: User) -> Dataset:
     dataset = db.get(Dataset, dataset_id)
     if dataset is None:
@@ -209,6 +238,7 @@ def start_live_eval(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Model has no trained artifact to evaluate",
         )
+    _ensure_model_artifact(model)
 
     # Live eval hot-swaps the global NER model; refuse while any extraction or
     # live-eval job is running instance-wide (they share bioner's single model).
@@ -400,7 +430,7 @@ def run_live_eval_job(
         prev_path = prev_model.path if prev_model is not None else None
 
         try:
-            _activate_on_bioner(model.path)
+            bioner_client.activate_model(model.path)
 
             # Clear this model's prior predictions for these records so a re-run
             # scores fresh output rather than accumulating duplicates.
@@ -473,18 +503,24 @@ def run_live_eval_job(
             job.updated_at = datetime.now(timezone.utc)
             session.add(job)
             session.commit()
-        except requests.RequestException as exc:
+        except Exception as exc:
+            # Catch everything: an escaped exception would leave the job stuck
+            # in "running" forever (the frontend polls it as a zombie).
             session.rollback()
             job = session.get(LiveEvalJob, job_id)
             if job is not None:
                 job.status = "failed"
-                job.error_message = str(exc)
+                job.error_message = (
+                    bioner_client.http_error_detail(exc)
+                    or str(exc)
+                    or exc.__class__.__name__
+                )
                 job.updated_at = datetime.now(timezone.utc)
                 session.add(job)
                 session.commit()
         finally:
             # Restore the previously-active model even on failure/cancel.
             try:
-                _activate_on_bioner(prev_path)
+                bioner_client.activate_model(prev_path)
             except Exception:
                 pass

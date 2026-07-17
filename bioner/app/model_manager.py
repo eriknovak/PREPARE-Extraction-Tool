@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -126,6 +127,27 @@ def _derive_name_version(model_dir: Path) -> tuple[str, str]:
     match = _RUN_DIR_RE.match(model_dir.name)
     version = match.group(1) if match else "local"
     return model_dir.name, version
+
+
+def remove_model_dir(models_dir: str, dir_name: str) -> None:
+    """Delete a model directory under ``models_dir``.
+
+    ``dir_name`` must be a bare directory name (no separators or dot-refs) and
+    the directory must carry an engine marker file (see ``detect_engine``), so
+    this can never remove anything but an immediate model folder. Raises
+    ``ValueError`` on an invalid name / non-model dir, ``FileNotFoundError``
+    when the directory does not exist.
+    """
+    if not dir_name or dir_name != Path(dir_name).name or dir_name in {".", ".."}:
+        raise ValueError(f"Invalid model directory name: {dir_name!r}")
+    target = Path(models_dir) / dir_name
+    if not target.is_dir():
+        raise FileNotFoundError(f"No such model directory: {dir_name}")
+    engine, _ = detect_engine(target)
+    if engine is None:
+        raise ValueError(f"Not a model directory: {dir_name}")
+    shutil.rmtree(target)
+    logger.info("Removed model directory %s", target)
 
 
 def scan_models(models_dir: str) -> list[dict]:

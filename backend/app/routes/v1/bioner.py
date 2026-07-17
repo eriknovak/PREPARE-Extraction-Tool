@@ -745,6 +745,62 @@ def rescan_models(
     )
 
 
+@router.delete("/models/{model_id}", response_model=MessageOutput)
+def delete_model(
+    model_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Delete a model: its on-disk folder (via bioner) and its DB row.
+
+    Works for both trained and rescan-"discovered" models. Refused while the
+    model is globally active or any extraction/live-eval job is running. The
+    model's job-history rows go with it; a producing TrainingRun is kept as
+    history. bioner's 404 (folder already gone) is tolerated so a partially
+    failed delete can be retried.
+    """
+    model = db.get(Model, model_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not found")
+    if model.source == "baseline" or model.name == training_service.BASELINE_MODEL_NAME:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Baseline comparison rows cannot be deleted",
+        )
+    if training_service.get_app_settings(db).active_model_id == model.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Model is the active extraction model — switch models first",
+        )
+    if extraction_lock.any_ner_job_active(db):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An extraction or live-eval job is running — try again later",
+        )
+
+    # Local model folders live under bioner's models dir (absolute paths); HF-id
+    # rows have nothing on disk. Folder first: if it fails nothing has changed,
+    # and if the later DB delete fails a rescan re-adds the row for a retry.
+    if model.path and model.path.startswith("/"):
+        dir_name = os.path.basename(model.path.rstrip("/"))
+        try:
+            bioner_client.delete_model_dir(dir_name)
+        except requests.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=bioner_client.http_error_detail(exc)
+                or "Extraction service refused to delete the model folder",
+            )
+        except requests.RequestException:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Extraction service unavailable",
+            )
+
+    training_service.delete_model(db, model)
+    return MessageOutput(message="deleted")
+
+
 @router.get("/models/{model_id}/detail", response_model=ModelDetailResponse)
 def model_detail(
     model_id: int,
@@ -789,14 +845,22 @@ def model_detail(
 
 
 def _activate_on_bioner(model_path: Optional[str]) -> None:
-    """Hot-swap bioner to the given model path (None = revert to launch default)."""
+    """Hot-swap bioner to the given model path (None = revert to launch default).
+
+    Route-handler wrapper around ``bioner_client.activate_model``: bioner's own
+    rejection (400, e.g. the artifact no longer exists on disk) is forwarded
+    with its message; anything else surfaces as a 503.
+    """
     try:
-        resp = requests.post(
-            f"{settings.EXTRACT_HOST}/model/activate",
-            json={"model": model_path},
-            timeout=300,
+        bioner_client.activate_model(model_path)
+    except requests.HTTPError as exc:
+        detail = bioner_client.http_error_detail(exc)
+        if exc.response is not None and exc.response.status_code == 400 and detail:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extraction service unavailable",
         )
-        resp.raise_for_status()
     except requests.RequestException:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

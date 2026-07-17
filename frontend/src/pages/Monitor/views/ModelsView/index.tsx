@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCheck, faPen, faRotate, faTrash, faXmark } from "@fortawesome/free-solid-svg-icons";
 
-import { deleteRun, getModelDetail, getRunMetrics, rescanModels, setActiveModel, updateRun } from "@api/monitoring";
+import { deleteModel, getModelDetail, getRunMetrics, rescanModels, setActiveModel, updateRun } from "@api/monitoring";
 import Button from "@components/Button";
 import Card from "@components/Card";
 import { ConfirmDialog } from "@components/ConfirmDialog";
@@ -48,11 +48,14 @@ const activationTooltip = (m: DiscoveredModelSummary, currentEngine: string | nu
 export interface ModelDetailProps {
   detail: ModelDetailResponse | null;
   metrics: TrainingMetric[];
+  /** Rendered inside the Evaluation group, after per-label eval (the container
+   *  passes `<LiveEvalPanel/>` here so this component stays API-free). */
+  liveEval?: ReactNode;
 }
 
-/** Renders training loss curve + per-label eval for a trained model.
+/** Renders per-label eval, training stats and loss curve for a trained model.
  *  Pass `detail=null` to show the Default-model empty state. */
-export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
+export const ModelDetail = ({ detail, metrics, liveEval }: ModelDetailProps) => {
   if (!detail) {
     return (
       <Card title="Model detail">
@@ -96,27 +99,8 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
 
   return (
     <div className={styles.detail}>
-      {/* ── Training loss chart ── */}
-      <Card title="Training loss">
-        {hasLoss ? (
-          <LineChart
-            xData={xData as (string | number)[]}
-            xName={xName}
-            yName="Loss"
-            height={CHART_HEIGHT}
-            xAxisFormatter={formatEpoch}
-            valueFormatter={formatLoss}
-            series={lossSeries}
-          />
-        ) : (
-          <ChartState
-            variant="empty"
-            title="No loss data"
-            message="This model has no recorded training metrics."
-            height={CHART_HEIGHT}
-          />
-        )}
-      </Card>
+      {/* ══ Evaluation ══ */}
+      <h3 className={styles.groupHeader}>Evaluation</h3>
 
       {/* ── Base vs trained per-label ── */}
       <Card title="Per-label evaluation (base vs trained)">
@@ -171,7 +155,13 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
         )}
       </Card>
 
-      {/* ── Training stats ── */}
+      {/* ── Live evaluation ── */}
+      {liveEval}
+
+      {/* ══ Training ══ */}
+      <h3 className={styles.groupHeader}>Training</h3>
+
+      {/* ── Training stats + label coverage ── */}
       <Card title="Training statistics">
         <div className={styles.statsGrid}>
           {trainedRecords != null && (
@@ -209,21 +199,42 @@ export const ModelDetail = ({ detail, metrics }: ModelDetailProps) => {
             </div>
           )}
         </div>
+        {(labels.length > 0 || distLabels.length > 0) && (
+          <div className={styles.coverage}>
+            <h4 className={styles.detailTitle}>Label coverage</h4>
+            <div className={styles.tagList}>
+              {labels.map((label) => (
+                <span key={label} className={styles.tag}>
+                  {label}
+                  {labelDist[label] != null && <span className={styles.tagCount}>{labelDist[label]}</span>}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </Card>
 
-      {/* ── Label coverage ── */}
-      {(labels.length > 0 || distLabels.length > 0) && (
-        <Card title="Label coverage">
-          <div className={styles.tagList}>
-            {labels.map((label) => (
-              <span key={label} className={styles.tag}>
-                {label}
-                {labelDist[label] != null && <span className={styles.tagCount}>{labelDist[label]}</span>}
-              </span>
-            ))}
-          </div>
-        </Card>
-      )}
+      {/* ── Training loss chart ── */}
+      <Card title="Training loss">
+        {hasLoss ? (
+          <LineChart
+            xData={xData as (string | number)[]}
+            xName={xName}
+            yName="Loss"
+            height={CHART_HEIGHT}
+            xAxisFormatter={formatEpoch}
+            valueFormatter={formatLoss}
+            series={lossSeries}
+          />
+        ) : (
+          <ChartState
+            variant="empty"
+            title="No loss data"
+            message="This model has no recorded training metrics."
+            height={CHART_HEIGHT}
+          />
+        )}
+      </Card>
     </div>
   );
 };
@@ -372,17 +383,18 @@ const ModelsView = () => {
   );
 
   const handleDeleteConfirm = useCallback(async () => {
-    if (!deleteTarget || !deleteTarget.run_id) return;
+    if (!deleteTarget) return;
     try {
-      await deleteRun(deleteTarget.run_id);
+      await deleteModel(deleteTarget.id);
       if (selectedId === deleteTarget.id) {
         setSelectedId(null);
       }
       setDeleteTarget(null);
       await reloadModels();
       toast.showToast("Model deleted", "success");
-    } catch {
-      toast.showToast("Failed to delete model", "error");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      toast.showToast(msg || "Failed to delete model", "error");
     }
   }, [deleteTarget, selectedId, reloadModels, toast]);
 
@@ -452,10 +464,11 @@ const ModelsView = () => {
                       aria-selected={selectedId === m.id}
                       onClick={() => setSelectedId(m.id)}
                     >
-                      <span className={styles.name}>{m.name}</span>
-                      {m.source && <span className={styles.badge}>{m.source}</span>}
-                      {m.score != null && <span className={styles.score}>{(m.score * 100).toFixed(1)}%</span>}
+                      <span className={styles.name} title={m.name}>
+                        {m.name}
+                      </span>
                       {m.is_active && <span className={styles.active}>● active</span>}
+                      {m.source && <span className={styles.badge}>{m.source}</span>}
                     </button>
 
                     <div className={styles.actions}>
@@ -511,10 +524,11 @@ const ModelsView = () => {
         ) : selectedId < 0 ? (
           <ModelDetail detail={null} metrics={[]} />
         ) : (
-          <>
-            <ModelDetail detail={detail} metrics={metrics} />
-            <LiveEvalPanel key={selectedId} modelId={selectedId} />
-          </>
+          <ModelDetail
+            detail={detail}
+            metrics={metrics}
+            liveEval={<LiveEvalPanel key={selectedId} modelId={selectedId} />}
+          />
         )}
       </section>
 

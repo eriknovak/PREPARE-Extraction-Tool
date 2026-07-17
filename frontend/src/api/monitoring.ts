@@ -51,6 +51,14 @@ export function deleteRun(runId: number) {
   });
 }
 
+/** Delete a model: its on-disk folder (via bioner) and its DB row. Works for
+ * discovered models with no training run; the producing run is kept as history. */
+export function deleteModel(modelId: number) {
+  return apiRequest<MessageOutput>(`/bioner/models/${modelId}`, {
+    method: "DELETE",
+  });
+}
+
 /** Per-epoch loss curve for a single run, ordered by epoch. */
 export function getRunMetrics(runId: number) {
   return apiRequest<TrainingMetric[]>(`/bioner/runs/${runId}/metrics`);
