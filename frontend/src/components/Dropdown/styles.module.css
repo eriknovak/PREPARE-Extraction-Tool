@@ -51,6 +51,16 @@
   outline-offset: -2px;
 }
 
+.dropdown__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dropdown__item:disabled:hover {
+  background: none;
+  color: var(--color-text);
+}
+
 .dropdown__item--danger {
   color: var(--color-error);
 }

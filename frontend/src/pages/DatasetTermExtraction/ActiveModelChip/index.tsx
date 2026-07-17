@@ -8,11 +8,11 @@ interface ActiveModelChipProps {
 
 const ActiveModelChip: React.FC<ActiveModelChipProps> = ({ modelName }) => {
   return (
-    <span className={styles.chip} title="Extraction model (set in Monitor)">
-      <span className={styles.chipLabel}>Model:</span>
-      <span className={styles.chipName}>{modelName}</span>
-      <Link to="/monitor" className={styles.chipLink}>
-        Monitor
+    <span className={styles.caption} title="Extraction model used by Auto-Detect (set in Monitor)">
+      using <span className={styles["caption__name"]}>{modelName}</span>
+      {" · "}
+      <Link to="/monitor" className={styles["caption__link"]}>
+        change in Monitor ↗
       </Link>
     </span>
   );
