@@ -14,6 +14,8 @@ interface RecordItemProps {
 }
 
 const RecordItem: React.FC<RecordItemProps> = ({ record, isSelected, onClick }) => {
+  const snippet = record.text.split("\n").find((line) => line.trim().length > 0)?.trim() ?? "";
+
   return (
     <div
       className={classNames(styles["record-item"], { [styles["record-item--selected"]]: isSelected })}
@@ -22,6 +24,7 @@ const RecordItem: React.FC<RecordItemProps> = ({ record, isSelected, onClick }) 
     >
       <div className={styles["record-item__main"]}>
         <div className={styles["record-item__id"]}>{record.patient_id}</div>
+        {snippet && <div className={styles["record-item__snippet"]}>{snippet}</div>}
         <div className={styles["record-item__meta"]}>
           {record.seq_number ? `#${record.seq_number} · ` : ""}
           {record.source_term_count > 0
