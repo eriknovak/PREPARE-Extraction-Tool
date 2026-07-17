@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 
-import type { useToast } from "@hooks/useToast";
+import type { ToastApi } from "@hooks/useToast";
 import type { MonitorDataset, MonitorDatasetStats, TrainingMetric } from "types";
 
 export const DEFAULT_MODEL = "urchade/gliner_multi-v2.1";
@@ -62,7 +62,8 @@ export interface MonitorContextValue {
   stopTraining: () => Promise<void>;
 
   // ── feedback ──
-  toast: ReturnType<typeof useToast>;
+  /** Stable toast API; the toast state + container live in `ToastProvider`. */
+  toast: ToastApi;
 }
 
 export const MonitorContext = createContext<MonitorContextValue | null>(null);
