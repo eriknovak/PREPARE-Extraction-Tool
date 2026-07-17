@@ -39,32 +39,31 @@
   margin-left: 8px;
 }
 
-/* Linked date (secondary, inline, no badge look) */
+/* Linked date (secondary, inline, no badge look). Ellipsizes so long linked
+   values never wrap or overflow the drawer/sidebar card. */
 .annotation-item__date-id {
+  min-width: 0;
   font-size: 0.7rem;
   font-weight: 400;
-
   color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .page {
   font-family: "Nunito Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
 }
 
-/* Stats Section */
+/* Stats Section — single band: stat cards on the left, the action cluster
+   (primary Auto-Detect + overflow menu + model caption) on the right. */
 .stats-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-/* Top row: stat cards on the left, extraction-model selector on the right. */
-.stats-section__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
 }
 
 .stats-section__grid {
@@ -74,22 +73,14 @@
 
 .stats-section__actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
-/* Extraction-model selector — inline label + dropdown, aligned to the right
-   of the top row alongside the stat cards. */
-.stats-section__model {
+.stats-section__actions-row {
   display: flex;
-  align-items: center;
   gap: 8px;
-}
-
-.stats-section__model-label {
-  font-weight: 600;
-  color: var(--color-text-muted);
-  white-space: nowrap;
 }
 
 /* Extraction Progress (inline with stats) */
@@ -124,9 +115,13 @@
 /* Main Content Area */
 .content {
   display: grid;
-  grid-template-columns: 380px 1fr;
-  gap: 20px;
+  grid-template-columns: 260px 1fr;
+  gap: 16px;
   min-height: calc(100vh - 240px);
+}
+
+.content--rail-collapsed {
+  grid-template-columns: 46px 1fr;
 }
 
 /* Records Panel */
@@ -140,65 +135,165 @@
   max-height: calc(100vh - 240px);
 }
 
+/* Collapsed rail: a thin strip with a vertical expand button */
+.records-panel--collapsed {
+  align-items: stretch;
+}
+
+.records-panel__expand {
+  flex: 1;
+  writing-mode: vertical-rl;
+  padding: 14px 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.records-panel__expand:hover {
+  color: var(--color-primary-dark);
+  background: var(--color-gray-100);
+}
+
 .records-panel__header {
-  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--color-border);
+}
+
+.records-panel__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .records-panel__title {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 700;
   color: var(--color-primary-dark);
+  white-space: nowrap;
+}
+
+.records-panel__count {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* One scoped search input + review-status filter popover */
+.records-panel__search-row {
+  display: flex;
+  gap: 6px;
+  position: relative;
+}
+
+.records-panel__search-box {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-alt);
+  overflow: hidden;
+}
+
+.records-panel__search-box:focus-within {
+  border-color: var(--color-accent);
+  background: var(--color-surface);
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
+}
+
+.records-panel__scope {
+  flex: none;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-gray-500);
+  background: var(--color-gray-100);
+  border: none;
+  border-right: 1px solid var(--color-border);
+  cursor: pointer;
+}
+
+.records-panel__scope:focus {
+  outline: none;
 }
 
 .records-panel__search {
-  width: 100%;
-  padding: 10px 14px;
-  margin-top: 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  font-size: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 7px 8px;
+  font-size: 13px;
   color: var(--color-text);
-  background: var(--color-surface-alt);
-  transition: all 0.2s ease;
+  background: none;
+  border: none;
 }
 
 .records-panel__search:focus {
   outline: none;
-  border-color: var(--color-accent);
-  background: var(--color-surface);
-  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
 }
 
 .records-panel__search::placeholder {
   color: var(--color-gray-400);
 }
 
-.records-panel__filters {
-  display: flex;
-  gap: 16px;
-  margin-top: 12px;
-  padding: 8px 0;
+.records-panel__filter {
+  position: relative;
+  flex: none;
 }
 
-.records-panel__filters label {
+.records-panel__filter-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-success);
+  pointer-events: none;
+}
+
+.records-panel__filter-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 150px;
+  padding: 10px 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-overlay, 0 4px 12px rgba(0, 0, 0, 0.15));
+}
+
+.records-panel__filter-pop label {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text);
 }
 
-.records-panel__filters input[type="radio"] {
+.records-panel__filter-pop input[type="radio"] {
   cursor: pointer;
   width: 16px;
   height: 16px;
   accent-color: var(--color-success);
 }
 
-.records-panel__filters label:hover span {
+.records-panel__filter-pop label:hover span {
   color: var(--color-primary-dark);
 }
 
@@ -208,11 +303,14 @@
   padding: 8px;
 }
 
-/* Record Item */
+/* Record Item — dense two-line row: patient ID / seq + term count, reviewed check */
 .record-item {
-  padding: 14px 16px;
-  margin-bottom: 4px;
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 2px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
   border: 2px solid transparent;
@@ -227,74 +325,30 @@
   border-color: var(--color-success);
 }
 
-.record-item__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
+.record-item__main {
+  flex: 1;
+  min-width: 0;
 }
 
 .record-item__id {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-primary-dark);
-}
-
-.record-item__time {
-  font-size: 12px;
-  color: var(--color-gray-400);
-}
-
-.record-item__preview {
   font-size: 13px;
-  color: var(--color-text-muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  white-space: nowrap;
   overflow: hidden;
-  line-height: 1.4;
+  text-overflow: ellipsis;
 }
 
-.record-item__status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-/* Status Badge */
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
-.status-badge--processed {
-  background: var(--color-success-tint);
-  color: var(--color-success-hover);
-}
-
-.status-badge--pending {
-  background: var(--color-warning-tint);
-  color: var(--color-warning-hover);
-}
-
-.status-badge--reviewed {
-  background-color: var(--color-success);
-  color: var(--color-surface);
-}
-
-.record-item__term-count {
+.record-item__meta {
   font-size: 11px;
   color: var(--color-text-muted);
-  background: var(--color-gray-100);
-  padding: 3px 8px;
-  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.record-item__check {
+  flex: none;
+  font-size: 12px;
+  color: var(--color-success);
 }
 
 .loading-more {
@@ -308,16 +362,7 @@
   height: 1px;
 }
 
-/* Detail Panels Container */
-.detail-panels {
-  display: flex;
-  flex-direction: row;
-  gap: 16px;
-  max-height: calc(100vh - 240px);
-  overflow: hidden;
-}
-
-/* Record Text Panel */
+/* Record Text Panel (NER view) — single header row + body split into text and terms drawer */
 .record-text-panel {
   background: var(--color-surface);
   border-radius: 4px;
@@ -325,34 +370,65 @@
   border: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
-  flex: 1;
+  min-width: 0;
   min-height: 200px;
+  max-height: calc(100vh - 240px);
   overflow: hidden;
 }
 
 .record-text-panel__header {
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--color-border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.record-text-panel__pager {
+  display: flex;
+  gap: 4px;
   flex-shrink: 0;
 }
 
-.record-text-panel__title {
+.record-text-panel__info {
   margin: 0;
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--color-primary-dark);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.record-text-panel__info-count {
+  font-weight: 600;
+  color: var(--color-text-muted);
 }
 
 .record-text-panel__actions {
   display: flex;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.record-text-panel__terms-toggle--active {
+  background: var(--color-info-tint);
+  border-color: var(--color-info);
+}
+
+.record-text-panel__body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
 }
 
 .record-text-panel__content {
   flex: 1;
+  min-width: 0;
   overflow-y: auto;
   padding: 16px;
 }
@@ -387,36 +463,65 @@
   outline-offset: 1.5px;
 }
 
-/* Terms Panel */
-.terms-panel {
-  background: var(--color-surface);
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  border: 1px solid var(--color-border);
+/* Terms Drawer — extracted terms inside the NER panel; collapses to a thin tab.
+   Cards reuse the .annotation-item layout shared with the annotation sidebar. */
+.terms-drawer {
+  flex: 0 0 300px;
   display: flex;
   flex-direction: column;
-  flex: 0 0 320px;
-  max-height: calc(100vh - 240px);
+  min-height: 0;
+  border-left: 1px solid var(--color-border);
   overflow: hidden;
 }
 
-.terms-panel__header {
-  padding: 12px 16px;
+.terms-drawer--closed {
+  flex-basis: 34px;
+}
+
+.terms-drawer__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
   border-bottom: 1px solid var(--color-border);
   flex-shrink: 0;
 }
 
-.terms-panel__title {
+.terms-drawer__title {
   margin: 0;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
   color: var(--color-primary-dark);
+  white-space: nowrap;
 }
 
-.terms-panel__content {
+.terms-drawer__list {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.terms-drawer__tab {
+  flex: 1;
+  writing-mode: vertical-rl;
+  padding: 12px 0;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.terms-drawer__tab:hover {
+  color: var(--color-primary-dark);
+  background: var(--color-gray-100);
 }
 
 /* Highlighted Term */
@@ -554,69 +659,6 @@
   pointer-events: none;
 }
 
-/* Terms List */
-.terms-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* Term Item */
-.term-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  background: var(--color-surface-alt);
-  border-radius: 4px;
-  border: 1px solid var(--color-border);
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.term-item:hover {
-  background: var(--color-gray-100);
-}
-
-.term-item__info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.term-item__value {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-primary-dark);
-}
-
-.term-item__label {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-weight: 500;
-  font-size: 12px;
-  width: fit-content;
-}
-
-.term-item__date {
-  display: inline-block;
-  box-sizing: border-box;
-  width: 110px;
-  height: 26px;
-  padding: 2px 8px;
-  line-height: 20px;
-
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--color-text);
-
-  background-color: var(--color-gray-100);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
-}
-
 /* Empty States */
 .empty-state {
   display: flex;
@@ -669,18 +711,18 @@
 
 /* Responsive */
 @media (max-width: 1024px) {
-  .content {
+  .content,
+  .content--rail-collapsed {
     grid-template-columns: 1fr;
   }
 
-  .stats-section__grid {
-    grid-template-columns: repeat(2, 1fr);
+  .records-panel {
+    max-height: 320px;
   }
-}
 
-@media (max-width: 640px) {
-  .stats-section__grid {
-    grid-template-columns: 1fr;
+  .stats-section__grid,
+  .stats-section__actions-row {
+    flex-wrap: wrap;
   }
 }
 
@@ -1055,6 +1097,12 @@
   border-color: var(--color-primary-dark);
 }
 
+/* Flash highlight when the card's term is clicked in the record text */
+.annotation-item--flash {
+  outline: 2px solid var(--color-info);
+  background: var(--color-info-tint);
+}
+
 .annotation-item__row1 {
   display: flex;
   align-items: center;
@@ -1276,31 +1324,4 @@
   border-radius: 4px;
   font-style: normal;
   vertical-align: middle;
-}
-
-.downloadButton {
-  padding: 8px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-primary-dark);
-  font-weight: 600;
-  cursor: pointer;
-  min-width: 140px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  font-size: 14px;
-}
-
-.downloadButton:hover:not(:disabled) {
-  background: var(--color-info-tint);
-  border-color: var(--color-info-tint);
-  color: var(--color-primary-dark);
-}
-
-.downloadButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
