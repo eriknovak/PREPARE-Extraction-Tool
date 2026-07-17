@@ -42,6 +42,26 @@
   margin-bottom: var(--space-3);
 }
 
+/* Training + evaluation dataset pickers sit side by side. */
+.dataGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+/* The pickers' hints have unequal length, so drop the bottom margin the
+   trailing field would otherwise add below the card content. */
+.dataGrid .field {
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .dataGrid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+}
+
 .field__label {
   display: block;
   margin: 0 0 var(--space-1);
@@ -109,9 +129,9 @@
 }
 
 .hyperparams {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--space-2) var(--space-3);
   margin-top: var(--space-2);
 }
 
@@ -119,10 +139,22 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  min-width: 0;
+}
+
+/* Sub-labels of an already-labelled section — deliberately quieter than
+   `.field__label` so the hyperparameters read as one group, not as peers of
+   the top-level fields. Matches `.modelInfo__term`. */
+.hyperparam__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
 }
 
 .hyperparam .input {
-  max-width: 180px;
+  max-width: 100%;
 }
 
 .actions {
@@ -164,15 +196,6 @@
   .configGrid {
     grid-template-columns: 1fr;
   }
-}
-
-.status {
-  margin: 0;
-  color: var(--color-text-muted);
-}
-
-.status--active {
-  color: var(--color-success);
 }
 
 /* ------------------ PHASE STEPPER ------------------ */

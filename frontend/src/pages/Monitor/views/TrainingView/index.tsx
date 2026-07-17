@@ -106,7 +106,6 @@ const TrainingView = () => {
     currentStep,
     totalSteps,
     trainingMetrics,
-    trainingStatus,
     trainingPhase,
     startTraining,
     stopTraining,
@@ -147,33 +146,33 @@ const TrainingView = () => {
     <div className={styles.view}>
       {/* DATASETS */}
       <Card title="Training data">
-        <div className={styles.field}>
-          <p className={styles.field__label}>Training datasets</p>
-          <Select
-            multiSelect
-            values={trainingDatasetIds.map(String)}
-            onValuesChange={(vals) => setTrainingDatasetIds(vals.map(Number))}
-            options={datasetOptions}
-            placeholder="Select datasets…"
-            fullWidth={false}
-          />
-        </div>
+        <div className={styles.dataGrid}>
+          <div className={styles.field}>
+            <p className={styles.field__label}>Training datasets</p>
+            <Select
+              multiSelect
+              values={trainingDatasetIds.map(String)}
+              onValuesChange={(vals) => setTrainingDatasetIds(vals.map(Number))}
+              options={datasetOptions}
+              placeholder="Select datasets…"
+            />
+          </div>
 
-        <div className={styles.field}>
-          <p className={styles.field__label}>Evaluation datasets (optional)</p>
-          <Select
-            multiSelect
-            values={evalDatasetIds.map(String)}
-            onValuesChange={(vals) => setEvalDatasetIds(vals.map(Number))}
-            options={evalOptions}
-            placeholder="Held-out split of training data"
-            fullWidth={false}
-          />
-          <p className={styles.hint}>
-            {hasEvalDatasets
-              ? "Evaluating on the selected datasets."
-              : "No eval datasets — a held-out split of the training data is used."}
-          </p>
+          <div className={styles.field}>
+            <p className={styles.field__label}>Evaluation datasets (optional)</p>
+            <Select
+              multiSelect
+              values={evalDatasetIds.map(String)}
+              onValuesChange={(vals) => setEvalDatasetIds(vals.map(Number))}
+              options={evalOptions}
+              placeholder="Held-out split of training data"
+            />
+            <p className={styles.hint}>
+              {hasEvalDatasets
+                ? "Evaluating on the selected datasets."
+                : "No eval datasets — a held-out split of the training data is used."}
+            </p>
+          </div>
         </div>
       </Card>
 
@@ -311,7 +310,7 @@ const TrainingView = () => {
               {showAdvanced && (
                 <div className={styles.hyperparams}>
                   <label className={styles.hyperparam}>
-                    <span className={styles.field__label}>Epochs</span>
+                    <span className={styles.hyperparam__label}>Epochs</span>
                     <input
                       type="number"
                       min={1}
@@ -323,7 +322,7 @@ const TrainingView = () => {
                   </label>
 
                   <label className={styles.hyperparam}>
-                    <span className={styles.field__label}>Learning rate</span>
+                    <span className={styles.hyperparam__label}>Learning rate</span>
                     <input
                       type="number"
                       min={0}
@@ -335,7 +334,7 @@ const TrainingView = () => {
                   </label>
 
                   <label className={styles.hyperparam}>
-                    <span className={styles.field__label}>Batch size</span>
+                    <span className={styles.hyperparam__label}>Batch size</span>
                     <input
                       type="number"
                       min={1}
@@ -361,12 +360,6 @@ const TrainingView = () => {
               <Button variant="danger" onClick={stopTraining} disabled={!isTraining}>
                 Stop
               </Button>
-
-              {trainingStatus && (
-                <p className={classNames(styles.status, { [styles["status--active"]]: isTraining })}>
-                  {trainingStatus}
-                </p>
-              )}
             </div>
           </div>
         </div>

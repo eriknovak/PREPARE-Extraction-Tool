@@ -91,7 +91,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
   const [trainingMetrics, setTrainingMetrics] = useState<TrainingMetric[]>([]);
   const [isTraining, setIsTraining] = useState(false);
-  const [trainingStatus, setTrainingStatus] = useState<string>("");
   // Live pre-training phase, derived from the WS event stream (and rehydrated
   // from the active-run endpoint on mount). Null while no run is in flight.
   const [trainingPhase, setTrainingPhase] = useState<string | null>(null);
@@ -122,7 +121,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
   const markRunDead = (message?: string | null, suggestion?: string) => {
     const msg = message ?? "Training stopped unexpectedly.";
     setIsTraining(false);
-    setTrainingStatus(`Error: ${msg}`);
     setProgress(0);
     setCurrentStep(0);
     setTotalSteps(0);
@@ -199,7 +197,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
           setTrainingMetrics([]);
           setProgress(0);
           setCurrentStep(0);
-          setTrainingStatus("Training started…");
           // Model is loaded; baseline evaluation runs next (the dominant CPU stall).
           setTrainingPhase("baseline");
 
@@ -211,7 +208,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
         case "training_info":
           setIsTraining(true);
-          setTrainingStatus(`Training started (${data.train_size} samples)`);
+          toast.info(`Training started (${data.train_size} samples)`);
           // First event of the run: model is loading and data is being prepared.
           setTrainingPhase("loading");
           break;
@@ -264,7 +261,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
         case "completed":
           setIsTraining(false);
-          setTrainingStatus(`Completed — saved to ${data.output_path ?? "unknown"}`);
+          toast.success(`Training completed — saved to ${data.output_path ?? "unknown"}`);
           setProgress(100);
           setCurrentStep(0);
           setTotalSteps(0);
@@ -273,7 +270,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
         case "stopped":
           setIsTraining(false);
-          setTrainingStatus("Training stopped.");
+          toast.info("Training stopped.");
           setProgress(0);
           setCurrentStep(0);
           setTotalSteps(0);
@@ -292,9 +289,11 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
       const attempt = reconnectAttemptsRef.current;
       const delay = Math.min(30000, 1000 * 2 ** attempt);
       reconnectAttemptsRef.current = attempt + 1;
-      // only surface the transient state if a training run is actually in flight
-      if (isTrainingRef.current) {
-        setTrainingStatus("Connection lost — reconnecting…");
+      // Only surface the transient state if a training run is actually in
+      // flight, and only on the first attempt — later retries would re-toast
+      // the same condition on every backoff tick.
+      if (isTrainingRef.current && attempt === 0) {
+        toast.warning("Connection lost — reconnecting…");
       }
       reconnectTimerRef.current = setTimeout(connect, delay);
     };
@@ -363,7 +362,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
         setActiveRunId(run.run_id);
         setIsTraining(true);
-        setTrainingStatus("Training in progress…");
         setTrainingPhase(run.phase ?? null);
         // Drives the stats card + progress region without a manual reselect.
         setTrainingDatasetIds(run.dataset_ids);
@@ -432,7 +430,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
 
     setTrainingMetrics([]);
     setIsTraining(true);
-    setTrainingStatus("Submitting…");
 
     try {
       const data = await apiStartTraining({
@@ -447,10 +444,8 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
       });
 
       setActiveRunId(data.run_id);
-      setTrainingStatus("Training started successfully");
     } catch (err) {
       setIsTraining(false);
-      setTrainingStatus("Training failed to start");
       showAlert(describeStartError(err), "error");
     }
   };
@@ -461,7 +456,7 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     await apiStopTraining(activeRunId);
 
     setIsTraining(false);
-    setTrainingStatus("Stop requested.");
+    toast.info("Stop requested.");
   };
 
   const value: MonitorContextValue = {
@@ -476,7 +471,6 @@ const MonitorProvider = ({ children }: { children: ReactNode }) => {
     currentStep,
     totalSteps,
     trainingMetrics,
-    trainingStatus,
     trainingPhase,
 
     trainingDatasetIds,
