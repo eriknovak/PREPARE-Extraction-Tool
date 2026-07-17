@@ -725,6 +725,11 @@ const DatasetTermExtraction: React.FC = () => {
           onMarkReviewed={handleMarkReviewed}
           isReviewed={selectedRecord?.reviewed ?? false}
           readOnly={selectedRecord?.reviewed ?? false}
+          recordInfo={
+            selectedRecord
+              ? `Patient ${selectedRecord.patient_id}${selectedRecord.seq_number ? ` · #${selectedRecord.seq_number}` : ""}`
+              : undefined
+          }
         />
 
         {/* Toast notifications */}
