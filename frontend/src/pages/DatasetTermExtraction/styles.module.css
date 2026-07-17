@@ -1,18 +1,6 @@
 .annotation-item__date {
-  display: inline-block;
-  box-sizing: border-box;
-  width: 110px;
-  height: 26px;
-  padding: 2px 8px;
-  line-height: 20px;
-
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--color-text);
-
-  background-color: var(--color-gray-100);
-  border: 1px solid var(--color-border);
-  border-radius: 2px;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
 }
 
 .annotation-item__date-input {
@@ -53,12 +41,10 @@
 
 /* Linked date (secondary, inline, no badge look) */
 .annotation-item__date-id {
-  margin-left: 8px;
-
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   font-weight: 400;
 
-  color: var(--color-text-muted);
+  color: var(--color-primary);
 }
 
 .page {
@@ -700,36 +686,33 @@
 
 /* Annotation Sidebar */
 
-/* Two-column layout */
+/* Vertical layout: nav row → instructions strip → labels row → text + annotations columns */
 .annotation-sidebar {
-  display: grid;
-  grid-template-columns: 1fr 400px;
-  gap: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   height: calc(100vh - 100px);
 }
 
+/* Main columns: record text (flexible) + annotations rail (fixed) */
+.annotation-main {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+}
+
 @media (max-width: 1100px) {
-  .annotation-sidebar {
-    grid-template-columns: 1fr 360px;
-    gap: 16px;
+  .annotation-main {
+    grid-template-columns: 1fr 340px;
   }
 }
 
 @media (max-width: 900px) {
-  .annotation-sidebar {
+  .annotation-main {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr auto;
-    height: auto;
-    max-height: calc(100vh - 100px);
-  }
-
-  .annotation-text {
-    max-height: 50vh;
-  }
-
-  .annotation-controls {
-    max-height: 40vh;
-    overflow-y: auto;
+    grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
   }
 }
 
@@ -767,33 +750,50 @@
   padding: 16px;
 }
 
-/* Right panel - Controls */
-.annotation-controls {
+/* Navigation row */
+.annotation-nav {
   display: flex;
-  flex-direction: column;
-  gap: 16px;
-  overflow: hidden;
-  min-height: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
-/* Instructions */
+.annotation-nav__pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.annotation-nav__info {
+  margin-left: 6px;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+
+/* Condensed instructions strip */
 .annotation-instructions {
-  padding: 12px 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 24px;
+  padding: 10px 14px;
   background: var(--color-info-tint);
   border: 1px solid var(--color-info-tint);
   border-radius: 4px;
   flex-shrink: 0;
 }
 
-.annotation-instructions p {
-  margin: 0;
-  font-size: 13px;
+.annotation-instructions div {
+  font-size: 12.5px;
   color: var(--color-primary-dark);
   line-height: 1.5;
 }
 
-.annotation-instructions p + p {
-  margin-top: 8px;
+@media (max-width: 900px) {
+  .annotation-instructions {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .annotation-instructions kbd {
@@ -807,39 +807,6 @@
   color: var(--color-text);
 }
 
-.annotation-instructions__shortcuts {
-  margin: 8px 0 0;
-  padding-left: 0;
-  list-style: none;
-  display: grid;
-  grid-template-columns: 1.3fr 1.1fr;
-  gap: 4px 8px;
-}
-
-.annotation-instructions__shortcuts li {
-  font-size: 13px;
-  color: var(--color-primary-dark);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* Record Navigation */
-.record-navigation {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.record-navigation__buttons {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  flex: 0 0 auto;
-}
-
 .record-navigation__button-text {
   white-space: nowrap;
   overflow: hidden;
@@ -850,32 +817,29 @@
   white-space: nowrap;
 }
 
-/* Responsive styles for annotation sidebar navigation */
-@media (max-width: 1200px) {
-  .record-navigation {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-
-@media (max-width: 900px) {
-  .record-navigation {
-    flex-direction: row;
-  }
-
-  .record-navigation__buttons {
-    flex: 0 0 auto;
-  }
-}
-
-/* Label Section */
+/* Label Section (single row: title, label buttons, link button at the right) */
 .label-section {
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
   flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  margin-bottom: 12px;
+}
+
+.label-section__title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-primary-dark);
+  margin-right: 6px;
+}
+
+.label-section__link-button {
+  margin-left: auto;
 }
 
 .section-title {
@@ -884,14 +848,6 @@
   font-weight: 600;
   color: var(--color-primary-dark);
   flex-shrink: 0;
-}
-
-.label-section__buttons {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 /* Label Button */
@@ -1045,39 +1001,53 @@
   font-style: italic;
 }
 
-/* Annotation Section */
+/* Annotation Section (card with header, fills the right column) */
 .annotation-section {
-  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.annotation-section__header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+}
+
+.annotation-section__header .section-title {
+  margin: 0;
 }
 
 .annotation-section__list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   flex: 1;
   overflow-y: auto;
-  padding-right: 4px;
+  padding: 8px;
 }
 
-/* Annotation Item */
+/* Annotation Item (two-line card: value + label + delete / date + links) */
 .annotation-item {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: var(--color-surface-alt);
-  border: 2px solid transparent;
-  border-radius: 0px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
 }
 
 .annotation-item:hover {
-  background: var(--color-gray-100);
+  border-color: var(--color-gray-300);
 }
 
 .annotation-item--selected {
@@ -1085,15 +1055,22 @@
   border-color: var(--color-primary-dark);
 }
 
-.annotation-item__content {
+.annotation-item__row1 {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.annotation-item__row2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
 }
 
 .annotation-item__value {
+  flex: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--color-primary-dark);
@@ -1115,8 +1092,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
   background: transparent;
   border: none;
   border-radius: 0px;
@@ -1139,26 +1117,6 @@
   padding: 20px;
 }
 
-/* Label section header with Link button */
-.label-section__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.label-section__header .section-title {
-  margin: 0;
-}
-
-/* Muted help line clarifying auto vs manual linking */
-.link-help {
-  margin: 0 0 8px;
-  font-size: 12px;
-  color: var(--color-text-muted);
-  line-height: 1.4;
-}
-
 /* Link mode indicator banner */
 .link-mode-banner {
   padding: 6px 10px;
@@ -1167,7 +1125,7 @@
   border-radius: 4px;
   font-size: 12px;
   color: var(--color-info-hover);
-  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 /* Annotation item in link mode */
@@ -1209,7 +1167,7 @@
   display: flex;
   flex-direction: column;
   gap: 3px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .annotation-link-row {
